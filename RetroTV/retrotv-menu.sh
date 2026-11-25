@@ -49,10 +49,12 @@ flush_tty() {
 }
 
 read_folders() {
+    mkdir -p "$ROOT/CH - 50 Screenshots" || return 1
     find "$ROOT" -mindepth 1 -maxdepth 1 -type d ! -name cache ! -name live -printf '%f\n' | sort -f > /tmp/retrotv-folders
 }
 
 read_chans() {
+    mkdir -p "$ROOT/CH - 50 Screenshots" || return 1
     chanlist=/tmp/retrotv-chans
     chanlist_tmp=$(mktemp "${chanlist}.XXXXXX") || return 1
     if python3 "$BC" channels "$ROOT" > "$chanlist_tmp" &&
@@ -89,7 +91,10 @@ process_channels() {
     while IFS= read -r one; do
         [ -n "$one" ] || continue
         folder="$ROOT/$one"
-        if [ -f "$folder/.retrotv-news" ]; then
+        if [ "$one" = "CH - 50 Screenshots" ]; then
+            found=1
+            result="Screenshots ready"
+        elif [ -f "$folder/.retrotv-news" ]; then
             found=1
             result="News ready"
         elif has_media "$folder" ! -name '.*' -iname '*.mp3'; then

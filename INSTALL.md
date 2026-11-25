@@ -47,6 +47,17 @@ Run **Scripts → Analyze RetroTV Channels** after adding, removing, or
 replacing media. The analyzer updates the channel list and duration
 indexes. It leaves the media files as supplied.
 
+## Capture and view screenshots
+
+Press **Print Screen** in RetroTV to save a PNG of the cabinet and its
+picture to `/media/fat/games/RetroTV/channels/CH - 50 Screenshots/`.
+CH 50 starts with the latest capture and advances every 20 seconds. The
+current picture slides left as the next one enters from the right.
+
+In CH 50, **Page Up** shows the next image and **Page Down** shows the
+previous image. Press **D** twice to delete the current image. Pressing
+any other key after the first **D** dismisses the confirmation.
+
 ## Set the local weather and sky location
 
 Weather, Space Desk, and Moon use the MiSTer's approximate public-IP

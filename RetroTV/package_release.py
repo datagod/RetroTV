@@ -10,6 +10,7 @@ ROOT = HERE.parent
 WORKERS = (
     "retrotv-menu.sh", "retrotv-broadcast.py", "retrotv-music.py", "retrotv-news.py",
     "retrotv_guide.py", "retrotv_moon.py", "retrotv_space.py", "retrotv_weather.py",
+    "retrotv_screenshots.py",
     "astronomy_engine-2.1.19-py3-none-any.whl", "assets/music-stock.png",
 )
 GALLERY = (

@@ -137,6 +137,7 @@ def duration_ms(path, size):
 
 INDEX = ".retrotv-times.json"
 NEWS_MARKER = ".retrotv-news"
+SCREENSHOT_CHANNEL = "CH - 50 Screenshots"
 MOUNT_SOCKET = "/tmp/retrotv-video.sock"
 
 
@@ -162,7 +163,7 @@ def media_files(folder, suffix):
 
 def channel_order(path):
     name = path.name.casefold()
-    match = re.match(r"ch\s+([0-9]+)\b", name)
+    match = re.match(r"ch\s+(?:-\s*)?([0-9]+)\b", name)
     return (0, int(match[1]), name, path.name) if match else (1, 0, name, path.name)
 
 
@@ -176,7 +177,7 @@ def channel_folders(root):
 
 def list_channels(root):
     for folder in channel_folders(root):
-        if (folder / NEWS_MARKER).is_file():
+        if folder.name == SCREENSHOT_CHANNEL or (folder / NEWS_MARKER).is_file():
             print(folder.name)
             continue
         manifest = folder / "music.json"
@@ -382,6 +383,8 @@ def preview_frame(name):
 
 def prepare_channel(folder):
     """Classify a channel and resolve indexed clips without opening video."""
+    if folder.name == SCREENSHOT_CHANNEL:
+        return "screenshots", None
     if (folder / NEWS_MARKER).is_file():
         return "news", None
     clips = []

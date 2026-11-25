@@ -461,14 +461,14 @@ def notify_core(tty, code):
         port.write(bytes((code,)))
 
 
-def open_slideshow(stack, args):
+def open_art_buffers(stack, folder):
     memory = os.open("/dev/mem", os.O_RDWR | os.O_SYNC)
     stack.callback(os.close, memory)
     slots = stack.enter_context(mmap.mmap(memory, 2 * ART_STRIDE, offset=ART_BASE))
 
     # Let the core retire the preceding bank before reusing bank 0.
     time.sleep(0.035)
-    cabinet_folder = args.folder.parent.parent / "compact"
+    cabinet_folder = folder.parent.parent / "compact"
     native_slots = []
     for filenames, base, size in (
         (("cabinet.raw",), COMPACT_ART_BASE, COMPACT_ART_SIZE),
@@ -478,6 +478,11 @@ def open_slideshow(stack, args):
             layout_slots = stack.enter_context(mmap.mmap(
                 memory, 2 * COMPACT_SLOT_BYTES, offset=base))
             native_slots.append((layout_slots, size))
+    return slots, native_slots
+
+
+def open_slideshow(stack, args):
+    slots, native_slots = open_art_buffers(stack, args.folder)
     slideshow = Slideshow(slideshow_images(args.folder), slots, args.tty, native_slots)
     slideshow.show_due()
     return slideshow
@@ -490,6 +495,32 @@ def play_slideshow(args):
             time.sleep(max(0, slideshow.deadline - time.monotonic()))
             slideshow.show_due()
         signal.pause()
+
+
+def play_screenshots(args):
+    from retrotv_screenshots import Gallery
+
+    artwork = Artwork()
+    with contextlib.ExitStack() as stack:
+        slots, native_slots = open_art_buffers(stack, args.folder)
+        layouts = [(GLASS_WIDTH, GLASS_HEIGHT), *(size for _, size in native_slots)]
+        banks = [(slots, ART_STRIDE), *((slot, COMPACT_SLOT_BYTES) for slot, _ in native_slots)]
+        bank = 0
+
+        def load(path):
+            return (artwork.pixels(path, upscale=False), *(
+                artwork.pixels(path, *size, pixel_aspect=1, upscale=False)
+                for _, size in native_slots))
+
+        def publish(frames):
+            nonlocal bank
+            for (slot, stride), frame in zip(banks, frames):
+                start = bank * stride
+                slot[start:start + len(frame)] = frame
+            notify_core(args.tty, 0xCC + bank)
+            bank ^= 1
+
+        Gallery(args.folder, layouts, load, publish).run()
 
 
 def play_channel(args, tracks, elapsed_ms):
@@ -539,6 +570,9 @@ def main():
     slides = commands.add_parser("slideshow", help="Display a folder of images without audio")
     slides.add_argument("folder", type=Path)
     slides.add_argument("--tty", type=Path, default=Path("/dev/ttyS1"))
+    shots = commands.add_parser("screenshots", help="View and manage RetroTV screenshots")
+    shots.add_argument("folder", type=Path)
+    shots.add_argument("--tty", type=Path, default=Path("/dev/ttyS1"))
     play = commands.add_parser("play", help="Play an indexed music channel on MiSTer")
     play.add_argument("folder", type=Path)
     play.add_argument("--control", type=Path, required=True)
@@ -559,9 +593,12 @@ def main():
         if args.command == "load-cabinets":
             load_compact_cabinets(args.folder, args.tty)
             return 0
-        if args.command == "slideshow":
+        if args.command in {"slideshow", "screenshots"}:
             signal.signal(signal.SIGTERM, stop_worker)
-            play_slideshow(args)
+            if args.command == "screenshots":
+                play_screenshots(args)
+            else:
+                play_slideshow(args)
             return 0
         manifest = args.folder / "music.json"
         if args.command == "index":

@@ -24,6 +24,7 @@ cycle through six cabinets. F4 returns to the default cabinet.
 | N / P | Next / previous video or song |
 | Space | Pause or resume |
 | M | Mute or unmute |
+| Print Screen | Save the TV picture to CH 50 |
 | Esc | Return to the MiSTer menu |
 
 ## Built-in channels
@@ -36,6 +37,7 @@ cycle through six cabinets. F4 returns to the default cabinet.
 | 15 · What's On Now | The schedule for your own channels |
 | 16 · Space Desk | Launches, ISS passes, and space headlines |
 | 17 · Moon | Local phase, sky position, moonrise and moonset in one still snapshot per day |
+| 50 · Screenshots | Saved TV pictures with slide transitions |
 
 The download includes these channels, the cabinet artwork, and a stock image
 for music channels. Add your own media using the [channel setup instructions](INSTALL.md#add-your-own-channels).

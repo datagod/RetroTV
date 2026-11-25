@@ -1,6 +1,8 @@
+diff --git a/input.cpp b/input.cpp
+index 91b8ec0..49fdaf0 100644
 --- a/input.cpp
 +++ b/input.cpp
-@@ -6338,8 +6338,11 @@
+@@ -6338,8 +6338,11 @@ void key_update_frames_held_cb(void)
  	}
  }
  
@@ -12,9 +14,148 @@
  	#ifdef PROFILING
  		PROFILE_FUNCTION();
  	#endif
+diff --git a/scaler.cpp b/scaler.cpp
+index faeed0f..931aa8d 100644
+--- a/scaler.cpp
++++ b/scaler.cpp
+@@ -403,10 +403,12 @@ enum ScreenshotResult {
+ struct ScreenshotResult_atomic {
+     int result;
+     char *filename;
++    bool absolute_path;
+ };
+ 
+ static bool screenshot_requested = false;
+ static int screenshot_rescale = 0;
++static bool screenshot_absolute_path = false;
+ static char* screenshot_filename = NULL;
+ 
+ bool write_screenshot(const char *filename, const uint8_t *argb,
+@@ -506,9 +508,23 @@ bool write_screenshot(const char *filename, const uint8_t *inbuf,
+     return true;
+ }
+ 
+-static void save_screenshot(int do_rescale, int base_width, int base_height, int scaled_width, int scaled_height, unsigned char *outputbuf, char *filename) {
++static void save_screenshot(int do_rescale, int base_width, int base_height, int scaled_width, int scaled_height, unsigned char *outputbuf, char *filename, bool absolute_path) {
+     bool success = false;
+-    if (do_rescale)
++    if (absolute_path)
++    {
++        // Finish encoding before the gallery can see the new PNG.
++        char temporary[1024];
++        const char *name = strrchr(filename, '/') + 1;
++        int length = snprintf(temporary, sizeof(temporary), "%.*s.%s.pending.png",
++                              (int)(name - filename), filename, name);
++        if (length > 0 && length < (int)sizeof(temporary))
++        {
++            success = write_screenshot(temporary, outputbuf, base_width, base_height) &&
++                      rename(temporary, filename) == 0;
++            if (!success) unlink(temporary);
++        }
++    }
++    else if (do_rescale)
+     {
+         printf("rescaling screenshot from %dx%d to %dx%d\n", base_width, base_height, scaled_width, scaled_height);
+         success = write_screenshot(filename, outputbuf, base_width, base_height, scaled_width, scaled_height);
+@@ -526,6 +542,7 @@ static void save_screenshot(int do_rescale, int base_width, int base_height, int
+     {
+         result_data->result = success ? SCREENSHOT_SUCCESS : SCREENSHOT_FAILURE;
+         result_data->filename = filename;
++        result_data->absolute_path = absolute_path;
+         screenshot_result_data_atomic = result_data;
+     }
+     else
+@@ -536,7 +553,7 @@ static void save_screenshot(int do_rescale, int base_width, int base_height, int
+     screenshot_pending_atomic = false;
+ };
+ 
+-void do_screenshot(char* imgname)
++void do_screenshot(char* imgname, bool absolute_path)
+ {
+ 	#ifdef PROFILING
+ 		PROFILE_FUNCTION();
+@@ -573,6 +590,7 @@ void do_screenshot(char* imgname)
+     { mister_scaler_free(ms);
+ 		screenshot_pending_atomic = false;
+ 		screenshot_rescale = 0;
++		free(imgname);
+ 		return; 
+     }
+ 	
+@@ -591,7 +609,10 @@ void do_screenshot(char* imgname)
+     }
+ 
+     mister_scaler_read(ms, screenshot_outputbuf);
+-    FileGenerateScreenshotName(basename, filename, extension, 1024);
++    if (absolute_path)
++        snprintf(filename, sizeof(filename), "%s", basename);
++    else
++        FileGenerateScreenshotName(basename, filename, extension, sizeof(filename));
+ 
+     free(imgname);
+ 	imgname = NULL;
+@@ -615,12 +636,12 @@ void do_screenshot(char* imgname)
+ 
+ 	int do_rescale = screenshot_rescale;
+ 	offload_add_work([=]() {
+-        save_screenshot(do_rescale, base_width, base_height, scaled_width, scaled_height, screenshot_outputbuf, filename_copy);
++        save_screenshot(do_rescale, base_width, base_height, scaled_width, scaled_height, screenshot_outputbuf, filename_copy, absolute_path);
+     });
+ 	return;
+ }
+ 
+-void request_screenshot(char *cmd, int scaled)
++void request_screenshot(char *cmd, int scaled, bool absolute_path)
+ {
+     if (screenshot_pending_atomic || screenshot_requested)
+         return;
+@@ -637,6 +658,7 @@ void request_screenshot(char *cmd, int scaled)
+ 
+     screenshot_filename = copy;
+     screenshot_rescale = scaled;
++    screenshot_absolute_path = absolute_path;
+     screenshot_requested = true;
+ }
+ 
+@@ -654,9 +676,10 @@ void screenshot_cb(void)
+                 {
+                     char msg[1024];
+                     snprintf(msg, sizeof(msg), "Screen saved to\n%s",
++                            result_data->absolute_path ? "CH - 50 Screenshots" :
+                             result_data->filename + strlen(SCREENSHOT_DIR "/"));
+                     printf("%s\n", msg);
+-                    Info(msg);
++                    if (!result_data->absolute_path) Info(msg);
+                 }
+                 else
+                 {
+@@ -681,7 +704,7 @@ void screenshot_cb(void)
+ 	{
+ 		char *imgname = screenshot_filename;
+ 		screenshot_filename = NULL;
+-		do_screenshot(imgname);
++		do_screenshot(imgname, screenshot_absolute_path);
+ 	}
+     
+ }
+diff --git a/scaler.h b/scaler.h
+index 6991398..6e0f800 100644
+--- a/scaler.h
++++ b/scaler.h
+@@ -35,7 +35,7 @@ mister_scaler *mister_scaler_init();
+ int mister_scaler_read(mister_scaler *,unsigned char *buffer, mister_scaler_format_t format = ARGB32);
+ void mister_scaler_free(mister_scaler *);
+ 
+-void request_screenshot(char *cmd, int scaled = 0);
++void request_screenshot(char *cmd, int scaled = 0, bool absolute_path = false);
+ void screenshot_cb(void);
+ 
+ #endif
+diff --git a/user_io.cpp b/user_io.cpp
+index 014fef0..e11555b 100644
 --- a/user_io.cpp
 +++ b/user_io.cpp
-@@ -2191,7 +2191,7 @@
+@@ -2191,7 +2191,7 @@ void user_io_file_info(const char *ext)
  	DisableFpga();
  }
  
@@ -23,7 +164,7 @@
  {
  	int writable = 0;
  	int ret = 0;
-@@ -2228,7 +2228,7 @@
+@@ -2228,7 +2228,7 @@ int user_io_file_mount(const char *name, unsigned char index, char pre, int pre_
  			}
  			else
  			{
@@ -32,9 +173,24 @@
  				ret = FileOpenEx(&sd_image[index], name, writable ? (O_RDWR | O_SYNC) : O_RDONLY);
  				if (ret && len > 4) {
  					const char *core_name = user_io_get_core_name();
+@@ -4414,9 +4414,12 @@ void user_io_osd_key_enable(char on)
+ 	input_switch(-1);
+ }
+ 
++bool retrotv_keyboard(uint16_t key, int press);
++
+ void user_io_kbd(uint16_t key, int press)
+ {
+ 	register_activity();
++	if (retrotv_keyboard(key, press)) return;
+ 
+ 	if(is_menu()) spi_uio_cmd(UIO_KEYBOARD); //ping the Menu core to wakeup
+ 
+diff --git a/user_io.h b/user_io.h
+index 4557607..9201642 100644
 --- a/user_io.h
 +++ b/user_io.h
-@@ -193,7 +193,7 @@
+@@ -193,7 +193,7 @@ void user_io_status_reset();
  
  uint32_t user_io_get_file_crc();
  void user_io_write_gameid(const char *filename, uint32_t crc32_val = 0, const char *product_code = NULL);

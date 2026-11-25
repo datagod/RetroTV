@@ -72,6 +72,8 @@ def channel_rows(folder, elapsed, now, engine, normalize):
                        and file.is_file())
         return [f"Slideshow / {pictures} images",
                 "Images change every 20 seconds while tuned" if pictures > 1 else "Still image"]
+    if kind == "screenshots":
+        return ["Screenshots taken with Print Screen"]
     marker = (folder/engine["NEWS_MARKER"]).read_text(encoding="utf-8").strip().casefold()
     return [CARD_BY_MODE.get(marker, "World news headlines")]
 
