@@ -431,6 +431,10 @@ reg [2:0] art_frame = 3'b000;
 reg [11:0] news_scroll = 12'd0;
 reg [1:0]  news_frame_phase = 2'd0;
 reg [11:0] news_line = 12'd0;
+reg        news_line_bank = 1'b0;
+reg [9:0]  news_outgoing_rows = 10'd0;
+wire       news_step = (news_frame_phase != 2'd0);
+wire [9:0] news_view_height = fill_compact ? 10'd480 : 10'd379;
 reg [16:0] art_line_off = 17'd0;
 wire art_line = glass && art_frame[1];
 wire art_span = art_line && span_idx != 0 &&
@@ -485,10 +489,9 @@ wire [28:0] art_frame_base = fill_trinitron ?
     (art_frame[0] ? 29'h06340000 : 29'h06320000) : // physical 0x31A00000 / 0x31900000
     fill_compact ? (art_frame[0] ? 29'h062C0000 : 29'h062A0000) :
     (art_frame[0] ? ART_BASE1 : ART_BASE0);
-// News uses two 4096-row buffers per layout. A row is 2048 bytes,
-// so scrolling changes only the row number within the selected DDR page.
-wire [2:0] news_page = fill_trinitron ? {2'b10,art_frame[0]} :
-    fill_compact ? {2'b01,art_frame[0]} : {2'b00,art_frame[0]};
+// Each news row uses one of the two 4096-row buffers for this layout.
+wire [2:0] news_page = fill_trinitron ? {2'b10,news_line_bank} :
+    fill_compact ? {2'b01,news_line_bank} : {2'b00,news_line_bank};
 wire [28:0] news_line_addr = 29'h06500000 + {6'd0,news_page,news_line,8'd0};
 wire [28:0] art_line_addr = art_frame[2] ? news_line_addr :
     art_frame_base + {12'd0,art_line_off};
@@ -523,6 +526,11 @@ assign cabinet_din = pack_word;
 wire [9:0] pending_target = add_display_line(
     toggle_edge ? fin_m2 : pending_line, 2'd2, fill_height);
 wire [16:0] art_row = {7'd0,pending_target} - {7'd0,art_top};
+// During a refresh, the old strip continues above the join. Row zero of
+// the new strip follows it, so the join moves with the ordinary scroll.
+wire [10:0] incoming_news_row = {1'b0,art_row[9:0]} - {1'b0,news_outgoing_rows};
+wire news_use_old_bank = (news_outgoing_rows != 10'd0) && incoming_news_row[10];
+wire news_use_incoming_row = (news_outgoing_rows != 10'd0) && !incoming_news_row[10];
 wire [16:0] art_row_words = fill_trinitron ?
     (art_row << 7) + (art_row << 5) + (art_row << 4) + (art_row << 2) :
     fill_compact ? (art_row << 7) + (art_row << 5) :
@@ -539,6 +547,8 @@ always @(posedge clk_mem) begin
         news_scroll <= 12'd0;
         news_frame_phase <= 2'd0;
         news_line <= 12'd0;
+        news_line_bank <= 1'b0;
+        news_outgoing_rows <= 10'd0;
         art_line_off <= 17'd0;
         fill_layout <= 3'b000;
         bank_art <= 2'b00;
@@ -673,17 +683,26 @@ always @(posedge clk_mem) begin
                     if (fill_xbr && pending_target == 10'd0)
                         view_xbr_slot <= xbr_slot_mem;
                     art_line_off <= art_row_words;
-                    news_line <= news_scroll + {2'b00,art_row[9:0]};
+                    news_line <= news_use_incoming_row ?
+                        {2'b00,incoming_news_row[9:0]} : news_scroll + {2'b00,art_row[9:0]};
+                    news_line_bank <= art_frame[0] ^ news_use_old_bank;
                     if (pending_target == 10'd0) begin
                         art_frame <= art_m2;
-                        if (art_m2[2:1] != 2'b11 || art_m2 != art_frame) begin
+                        if (art_m2[2:1] != 2'b11 || art_frame[2:1] != 2'b11) begin
                             news_scroll <= 12'd0;
                             news_frame_phase <= 2'd0;
+                            news_outgoing_rows <= 10'd0;
                         end else begin
                             news_frame_phase <= news_frame_phase + 2'd1;
+                            if (art_m2[0] != art_frame[0])
+                                news_outgoing_rows <= news_view_height - {9'd0,news_step};
+                            else if (news_outgoing_rows != 10'd0 && news_step)
+                                news_outgoing_rows <= news_outgoing_rows - 10'd1;
+
                             // Advance on three of every four input frames.
-                            if (news_frame_phase != 2'd0)
-                                news_scroll <= news_scroll + 12'd1;
+                            if (news_step)
+                                news_scroll <= (news_outgoing_rows == 10'd1) ?
+                                    12'd0 : news_scroll + 12'd1;
                         end
                     end else if (pending_target <= art_top && !art_m2[2] && !art_frame[2]) begin
                         art_frame <= art_m2;

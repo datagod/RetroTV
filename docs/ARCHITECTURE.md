@@ -172,8 +172,12 @@ bundle, and rtl/media_overlay_font.mem as retrotv-news-font.mem in
 The worker draws 4096-row strips for the 428, 640, and 720 pixel-wide
 openings and fills the inactive bank. News pages occupy 0x32800000
 through 0x357FFFFF, with two 8 MiB banks per layout and rows 2048
-bytes apart. The core selects the new page at frame prefetch and
-advances one row on three of every four input frames. UART D4 and D5 publish the two
+bytes apart. At frame prefetch, a refresh joins the new page to the old
+page just below the visible picture. Both pages scroll together at one
+row on three of every four input frames. The old bank becomes available
+again once its last row leaves the screen. The shortest refresh interval
+is 60 seconds, and a 480-row opening takes about 22 seconds to clear.
+Tuning in starts at the top of the first page. UART D4 and D5 publish the
 scrolling pages, while CC and CD keep publishing fixed slides.
 
 ## RetroTV stock news channel
