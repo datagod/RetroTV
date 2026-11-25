@@ -47,6 +47,25 @@ Run **Scripts → Analyze RetroTV Channels** after adding, removing, or
 replacing media. The analyzer updates the channel list and duration
 indexes. It leaves the media files as supplied.
 
+## Add the test card channel
+
+CH 51 plays seven test cards from Canada, the United States, the United
+Kingdom, continental Europe, and Australia. It advances every 20 seconds.
+See the [card sources and credits](RetroTV/TEST_CARDS.md).
+
+From the RetroTV source checkout, run this on a computer with Python 3.9+
+and Internet access. Pass the path to the existing RetroTV channels folder
+on your MiSTer file share or SD card.
+
+```sh
+python3 RetroTV/setup_test_cards.py "/path/to/games/RetroTV/channels"
+```
+
+You can also copy `setup_test_cards.py` and `TEST_CARDS.md` into the same
+folder on your MiSTer and run `python3 setup_test_cards.py` there. The
+script checks the downloaded images and preserves existing channel files.
+Run **Scripts → Analyze RetroTV Channels** afterward, then tune to CH 51.
+
 ## Capture and view screenshots
 
 Press **Print Screen** in RetroTV to save a PNG of the cabinet and its

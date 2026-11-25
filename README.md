@@ -42,6 +42,9 @@ cycle through six cabinets. F4 returns to the default cabinet.
 The download includes these channels, the cabinet artwork, and a stock image
 for music channels. Add your own media using the [channel setup instructions](INSTALL.md#add-your-own-channels).
 
+The optional [CH 51 – Test Cards slideshow](INSTALL.md#add-the-test-card-channel)
+plays seven historical TV test patterns, one every 20 seconds.
+
 ## Building
 
 Build the FPGA source with Quartus Prime Lite 17.0 using
