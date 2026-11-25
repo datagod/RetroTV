@@ -123,3 +123,6 @@ set_global_assignment -name SYSTEMVERILOG_FILE rtl/media_movie_metadata.sv
 set_global_assignment -name SYSTEMVERILOG_FILE rtl/media_movie_playlist_ui.sv
 set_global_assignment -name SYSTEMVERILOG_FILE rtl/media_album_ui_toggle.sv
 set_global_assignment -name SYSTEMVERILOG_FILE rtl/media_aspect_toggle.sv
+set_global_assignment -name SYSTEMVERILOG_FILE rtl/retrotv/retrotv_cabinet.sv
+set_global_assignment -name SYSTEMVERILOG_FILE rtl/retrotv/retrotv_channel_banner.sv
+set_global_assignment -name SYSTEMVERILOG_FILE rtl/retrotv/retrotv_splash.sv

@@ -77,7 +77,7 @@ always @(posedge clk_video) begin
     if (reset_video)
         mpeg2_new_swap_window_video <= 1'b0;
     else
-        mpeg2_new_swap_window_video <= (display_v_pos >= 12'd480);
+        mpeg2_new_swap_window_video <= (display_v_pos >= (xbr_video ? 12'd720 : compact_video ? 12'd624 : 12'd480));
 end
 
 always @(posedge clk_mpeg2) begin
@@ -281,6 +281,7 @@ mpeg2_h262_b_presentation_scheduler #(.ENABLE_REFRESH_SELECTION(1)) mpeg2_h262_b
     .reset                       (reset_mpeg2),
     .swap_window_pulse           (media_scheduler_window),
     .refresh_50                  (refresh_50_decoder),
+    .compact_30                  (compact_30_decoder),
     .frame_rate_code             (mpeg2_new_frame_rate_code),
     .timestamp_candidate_active  (media_seeking || mpeg2_new_timestamp_candidate_active),
     .timestamp_candidate_due     (media_seeking || mpeg2_new_timestamp_candidate_due),

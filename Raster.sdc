@@ -146,3 +146,9 @@ foreach player_scene_name {snapshot w h scale revision state resume_state field 
 }
 set_multicycle_path -setup -end 4 -from $player_scene_ce_regs -to $player_scene_ce_regs
 set_multicycle_path -hold -end 3 -from $player_scene_ce_regs -to $player_scene_ce_regs
+
+# Banner text is bundled with the synchronized name toggle. The source
+# stores the whole name and waits 256 system clocks before flipping
+# the toggle. The destination copies data only on the synchronized edge.
+set_false_path -from [get_keepers {*|banner_name[*]}] -to [get_keepers {*|retrotv_channel_banner:*|chars*}]
+set_false_path -from [get_keepers {*|banner_len[*]}] -to [get_keepers {*|retrotv_channel_banner:*|len_q[*]}]

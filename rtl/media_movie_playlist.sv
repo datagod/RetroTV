@@ -11,7 +11,10 @@ module media_movie_playlist(
  output reg selected=0,output reg [63:0] movie_base=0,movie_size=0,
  output reg [63:0] subtitle_base=0,subtitle_size=0,
  output reg playlist_active=0,output reg [7:0] track=0,count=0,
- output reg error=0
+ output reg error=0,
+ input wire chain,input wire start_last,input wire start_pick,
+ input wire [7:0] start_index,
+ output reg part_next=0,output reg part_prev=0
 );
  localparam IDLE=0,DRAIN=1,START_HEADER=2,HEADER=3,HEADER_END=4,
             START_M3U=5,M3U=6,M3U_END=7,RESOLVE=8,RESOLVE_WAIT=9,
@@ -45,9 +48,10 @@ module media_movie_playlist(
  (* ramstyle="M10K" *) reg [81:0] movies[0:255],subtitles[0:255];
  reg [81:0] movie_q=0,srt_q=0;
  reg movie_resolved=0,srt_resolved=0;
- reg key_toggle=0,n_down=0,p_down=0;
- wire next_key=key_toggle!=key[10]&&key[9]&&key[8:0]==9'h031&&!n_down&&!osd_open;
- wire prev_key=key_toggle!=key[10]&&key[9]&&key[8:0]==9'h04d&&!p_down&&!osd_open;
+ reg key_toggle=0,n_down=0,p_down=0,part_hold=0;
+ // N advances a clip. P goes back. Left and right change channels.
+ wire next_key=key_toggle!=key[10]&&key[9]&&!osd_open&&key[8:0]==9'h031&&!n_down;
+ wire prev_key=key_toggle!=key[10]&&key[9]&&!osd_open&&key[8:0]==9'h04d&&!p_down;
  assign scan_busy=state!=IDLE&&state!=PLAY;
  assign scan_cancel=open||state==DRAIN||state==FAILED;
  assign stream_ready=state==HEADER||(state==M3U&&metadata_input_ready);
@@ -82,13 +86,13 @@ module media_movie_playlist(
    if(key[8:0]==9'h031)n_down<=key[9];
    if(key[8:0]==9'h04d)p_down<=key[9];
   end
-  selected<=0;scan_start<=0;m3u_begin<=0;
+  selected<=0;scan_start<=0;m3u_begin<=0;part_next<=0;part_prev<=0;
   if(reset||open)begin
    state<=open?DRAIN:IDLE;archive_size<=mounted_size;header_offset<=0;next_header<=0;
    movie_base<=0;movie_size<=0;subtitle_base<=0;subtitle_size<=0;
    playlist_active<=0;track<=0;count<=0;movie_count<=0;srt_count<=0;
    first_header<=1;m3u_seen<=0;header_reset<=1;prefix<=0;header_bytes<=0;error<=0;
-   movie_resolved<=0;srt_resolved<=0;
+   movie_resolved<=0;srt_resolved<=0;part_hold<=0;
    if(reset)begin n_down<=0;p_down<=0;end
   end else begin
    case(state)
@@ -141,7 +145,14 @@ module media_movie_playlist(
      if(movie_done)movie_resolved<=movie_ready&&!movie_error;
      if(srt_done)srt_resolved<=srt_ready&&!srt_error;
      if((movie_done&&movie_error)||(srt_done&&srt_error))begin error<=1;state<=FAILED;end
-     else if(movie_resolved&&srt_resolved)begin playlist_active<=1;count<=m3u_count;track<=0;state<=PICK_WAIT;end
+     else if(movie_resolved&&srt_resolved)begin
+      playlist_active<=1;count<=m3u_count;
+      // Previous part starts on its last clip. A join starts at start_index.
+      // Every other open starts at the first clip.
+      track<=(start_last && m3u_count!=0)?m3u_count-8'd1:
+             (start_pick && start_index<m3u_count)?start_index:8'd0;
+      state<=PICK_WAIT;
+     end
     end
     PICK_WAIT:state<=PICK;
     PICK:begin
@@ -149,11 +160,19 @@ module media_movie_playlist(
      subtitle_base<={23'd0,srt_q[81:41]};subtitle_size<={23'd0,srt_q[40:0]};
      selected<=1;state<=PLAY;
     end
-    PLAY:if(playlist_active&&(completed||next_key||prev_key))begin
-     if(prev_key)track<=track==0?count-1'b1:track-1'b1;
-     else track<=track+1'b1==count?8'd0:track+1'b1;
-     state<=PICK_WAIT;
-    end else if(completed)begin movie_size<=0;subtitle_size<=0;end
+    // One archive is one part. chain means another part exists, so the ends of
+    // this part ask Linux to mount the next one instead of wrapping inside it.
+    PLAY:if(playlist_active&&!part_hold&&(completed||next_key||prev_key))begin
+     if(chain&&((completed||next_key)&&(track+8'd1==count)))begin
+      part_next<=1;part_hold<=1;
+     end else if(chain&&prev_key&&track==0)begin
+      part_prev<=1;part_hold<=1;
+     end else if(prev_key)begin
+      track<=track==0?count-1'b1:track-1'b1;state<=PICK_WAIT;
+     end else begin
+      track<=track+1'b1==count?8'd0:track+1'b1;state<=PICK_WAIT;
+     end
+    end else if(completed&&!part_hold)begin movie_size<=0;subtitle_size<=0;end
     FAILED:;
     default:begin error<=1;state<=FAILED;end
    endcase

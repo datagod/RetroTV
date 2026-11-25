@@ -1,11 +1,11 @@
 // Coalescing mailbox for slow video configuration. Source holds each snapshot
 // until acknowledged; destination samples only after a synchronized request.
 // Intermediate settings may coalesce. This is not a streaming-data FIFO.
-module video_config_cdc #(parameter WIDTH=1)(
+module video_config_cdc #(parameter WIDTH=1, parameter INIT=0)(
  input wire src_clk,dst_clk,input wire [WIDTH-1:0] src_data,
- output reg [WIDTH-1:0] dst_data=0
+ output reg [WIDTH-1:0] dst_data=INIT
 );
-reg [WIDTH-1:0] held_data=0;
+reg [WIDTH-1:0] held_data=INIT;
 reg request=0,acknowledge=0;
 (* preserve, altera_attribute="-name AUTO_SHIFT_REGISTER_RECOGNITION OFF; -name SYNCHRONIZER_IDENTIFICATION FORCED_IF_ASYNCHRONOUS" *)
 reg [2:0] req_sync=0,ack_sync=0;

@@ -38,6 +38,11 @@ wire media_eof_close,media_video_eof_close;
 // A future TAR controller can supply member boundaries through the reader
 // without changing decoder drain/restart or presentation timing.
 wire media_movie_ddr_idle;
+wire        ioctl_download;
+wire [15:0] ioctl_index;
+wire        ioctl_wr;
+wire [15:0] ioctl_dout;
+wire        ioctl_wait;
 wire media_duration_known;
 wire [28:0] movie_mem_addr;
 wire [63:0] movie_mem_data;

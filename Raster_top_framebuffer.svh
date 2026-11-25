@@ -41,6 +41,9 @@ mpeg2_luma_framebuffer #(.ENABLE_COLOR_MATRIX(1)) mpeg2_luma_framebuffer
     .read_seen      (),
     .cache_error    (mpeg2_new_ddr_cache_error),
     .rd_clk         (clk_video),
+    .compact        (compact_video),
+    .trinitron      (trinitron_video),
+    .xbr            (xbr_video),
     .matrix_bt709(video_matrix_bt709),
     .h_pos          (display_h_pos),
     .v_pos          (display_v_pos),
@@ -55,10 +58,21 @@ mpeg2_luma_framebuffer #(.ENABLE_COLOR_MATRIX(1)) mpeg2_luma_framebuffer
     .video_vs       (fb_video_vs)
 );
 
+wire [7:0]  cabinet_burstcnt;
+wire [28:0] cabinet_addr;
+wire [63:0] cabinet_din;
+wire        cabinet_rd;
+wire        cabinet_we;
+wire        cabinet_preload;
+wire        cabinet_busy;
+wire        cabinet_dout_ready;
+
 mpeg2_h262_ddram_arbiter #(.ENABLE_QUIESCE(1),.ENABLE_DISPLAY_RELEASE(1)) mpeg2_h262_ddram_arbiter
 (
     .clk             (clk_mpeg2),
-    .reset           (reset_mpeg2),
+    // Per-file decoder reset must not clear this arbiter. The cabinet keeps
+    // reading through that reset so the bezel stays on screen between commercials.
+    .reset           (reset_mpeg2_base),
     .quiesce(media_quiesce),.idle(media_movie_ddr_idle),
     .release_display_bank(media_seeking),
     .writer_burstcnt (mpeg2_new_ddr_wr_burstcnt),
@@ -81,6 +95,14 @@ mpeg2_h262_ddram_arbiter #(.ENABLE_QUIESCE(1),.ENABLE_DISPLAY_RELEASE(1)) mpeg2_
     .stream_addr(av_mem_addr),.stream_din(av_mem_data),
     .stream_rd(av_mem_read),.stream_we(av_mem_write),.stream_busy(av_mem_busy),
     .stream_dout_ready(av_mem_q_valid),
+    .cabinet_burstcnt(cabinet_burstcnt),
+    .cabinet_addr(cabinet_addr),
+    .cabinet_din(cabinet_din),
+    .cabinet_rd(cabinet_rd),
+    .cabinet_we(cabinet_we),
+    .cabinet_preload(cabinet_preload),
+    .cabinet_busy(cabinet_busy),
+    .cabinet_dout_ready(cabinet_dout_ready),
     // Preserve physical busy while quiescing so accepted DDR requests drain.
     .ddram_busy      (DDRAM_BUSY),
     .ddram_dout_ready(DDRAM_DOUT_READY),

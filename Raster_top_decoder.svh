@@ -57,13 +57,13 @@ always @(posedge clk_mpeg2) begin
 end
 // Requested mode crosses coherently, then the raster applies it at frame end.
 // Publish the applied mode (not the menu request) to presentation scheduling.
-wire refresh_50_video_request, refresh_50_video_active, refresh_50_decoder;
+wire refresh_50_video_request, refresh_50_video_active, refresh_50_decoder, compact_30_decoder;
 video_config_cdc refresh_request_config(
  .src_clk(clk_sys),.dst_clk(clk_video),.src_data(status[6]),
  .dst_data(refresh_50_video_request));
-video_config_cdc refresh_applied_config(
- .src_clk(clk_video),.dst_clk(clk_mpeg2),.src_data(refresh_50_video_active),
- .dst_data(refresh_50_decoder));
+video_config_cdc #(.WIDTH(2)) refresh_applied_config(
+ .src_clk(clk_video),.dst_clk(clk_mpeg2),.src_data({compact_video,refresh_50_video_active}),
+ .dst_data({compact_30_decoder,refresh_50_decoder}));
 
 mpeg2_video_720x480p #(.ENABLE_REFRESH_SELECTION(1)) mpeg2_video_720x480p
 (
@@ -75,7 +75,13 @@ mpeg2_video_720x480p #(.ENABLE_REFRESH_SELECTION(1)) mpeg2_video_720x480p
 	.v_pos    (display_v_pos),
 	.pixel_en (display_pixel_en),
 	.h_sync   (display_h_sync),
-	.v_sync   (display_v_sync)
+	.v_sync   (display_v_sync),
+    .compact_request(compact_request_video),
+    .compact_active(compact_video),
+    .trinitron_request(trinitron_request_video),
+    .trinitron_active(trinitron_video),
+    .xbr_request(xbr_request_video),
+    .xbr_active(xbr_video)
 );
 
 ///////////////////////   NEW H.262 DECODER   ////////////////////

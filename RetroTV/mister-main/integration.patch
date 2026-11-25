@@ -1,0 +1,45 @@
+--- a/input.cpp
++++ b/input.cpp
+@@ -6338,8 +6338,11 @@
+ 	}
+ }
+ 
++void retrotv_mount_poll();
++
+ int input_poll(int getchar)
+ {
++	if (!getchar) retrotv_mount_poll();
+ 	#ifdef PROFILING
+ 		PROFILE_FUNCTION();
+ 	#endif
+--- a/user_io.cpp
++++ b/user_io.cpp
+@@ -2191,7 +2191,7 @@
+ 	DisableFpga();
+ }
+ 
+-int user_io_file_mount(const char *name, unsigned char index, char pre, int pre_size)
++int user_io_file_mount(const char *name, unsigned char index, char pre, int pre_size, bool read_only)
+ {
+ 	int writable = 0;
+ 	int ret = 0;
+@@ -2228,7 +2228,7 @@
+ 			}
+ 			else
+ 			{
+-				writable = FileCanWrite(name);
++				writable = !read_only && FileCanWrite(name);
+ 				ret = FileOpenEx(&sd_image[index], name, writable ? (O_RDWR | O_SYNC) : O_RDONLY);
+ 				if (ret && len > 4) {
+ 					const char *core_name = user_io_get_core_name();
+--- a/user_io.h
++++ b/user_io.h
+@@ -193,7 +193,7 @@
+ 
+ uint32_t user_io_get_file_crc();
+ void user_io_write_gameid(const char *filename, uint32_t crc32_val = 0, const char *product_code = NULL);
+-int  user_io_file_mount(const char *name, unsigned char index = 0, char pre = 0, int pre_size = 0);
++int  user_io_file_mount(const char *name, unsigned char index = 0, char pre = 0, int pre_size = 0, bool read_only = false);
+ void user_io_bufferinvalidate(unsigned char index);
+ char *user_io_make_filepath(const char *path, const char *filename);
+ char *user_io_get_core_name(int orig = 0);

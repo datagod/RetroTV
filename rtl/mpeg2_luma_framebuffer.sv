@@ -46,6 +46,9 @@ module mpeg2_luma_framebuffer #(parameter ENABLE_COLOR_MATRIX=0)
 
     // Independent fixed video side - 27 MHz.
     input  wire        rd_clk,
+    input  wire        compact,
+    input  wire        trinitron,
+    input  wire        xbr,
     input  wire        matrix_bt709,
     input  wire [11:0] h_pos,
     input  wire [11:0] v_pos,
@@ -644,7 +647,8 @@ end
 wire [11:0] origin_x, origin_y, source_x, source_y;
 wire source_window;
 mpeg2_progressive_geometry geometry (
-    .pixel_en(pixel_en), .h_pos(h_pos), .v_pos(v_pos),
+    .pixel_en(pixel_en), .compact(compact), .trinitron(trinitron), .xbr(xbr),
+    .h_pos(h_pos), .v_pos(v_pos),
     .picture_width(picture_width_r2), .picture_height(picture_height_r2),
     .origin_x(origin_x), .origin_y(origin_y),
     .source_window(source_window), .source_x(source_x), .source_y(source_y)

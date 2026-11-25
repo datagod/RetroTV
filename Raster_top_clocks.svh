@@ -57,25 +57,10 @@ wire reset_video = reset_video_sync[2];
 
 wire reset_mpeg2 = reset_mpeg2_base || media_decoder_reset;
 
-// The first scheduled frame starts playback. EOF closure follows the same
-// reset/drain path as a fresh load and restores startup message behavior.
-wire media_new_file_mpeg;
-video_config_cdc #(.WIDTH(1)) playback_hide_reset_config(
- .src_clk(clk_sys),.dst_clk(clk_mpeg2),.src_data(media_new_file_hold),.dst_data(media_new_file_mpeg));
-reg media_new_file_hold=0;
-always @(posedge clk_sys) begin
- if(RESET||media_new_file) media_new_file_hold<=1;
- else if(media_reader_start) media_new_file_hold<=0;
-end
-reg playback_started = 0;
-always @(posedge clk_mpeg2) begin
-    if (reset_mpeg2_base || media_new_file_mpeg) playback_started <= 0;
-    else if (mpeg2_new_framebuffer_swap_reset_count != 0) playback_started <= 1;
-end
-video_config_cdc #(.WIDTH(1)) playback_osd_config (
- .src_clk(clk_mpeg2), .dst_clk(clk_sys),
- .src_data(playback_started), .dst_data(OSD_HIDE_MESSAGE)
-);
+// MiSTer paints a bottom message while a file opens. Keep that message
+// hidden so a commercial change does not put a loading bar over the set.
+// The menu and the info display use a separate enable.
+assign OSD_HIDE_MESSAGE = 1'b1;
 
 
 // kate - Phase 1Ob: the streaming H.262 bitreader continues to own input

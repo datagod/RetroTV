@@ -27,3 +27,16 @@ sweep.log
 # Local release packages and scratch.
 dist/
 __pycache__/
+
+# RetroTV user media and generated channels
+*.[mM][pP][gG]
+*.[mM][pP][34]
+*.[mM][kK][vV]
+*.avi
+*.webm
+*.mov
+RetroTV/videos/
+RetroTV/output/
+RetroTV/channels/**
+!RetroTV/channels/*/
+!RetroTV/channels/*/.retrotv-news

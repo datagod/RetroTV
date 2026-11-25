@@ -1,10 +1,11 @@
-// Compressed-video queue at physical DDR 0x30400000..0x30bfffff.
+// Compressed-video queue at physical DDR 0x30680000..0x30e7ffff.
 // Each 64-bit word carries {EOF, PTS_valid, PTS[32:0], byte[7:0]}.
-// Framebuffers occupy 0x30000000..0x3027ffff. One read may be in flight;
-// prefetch occupancy and unread DDR occupancy are accounted independently.
+// Framebuffers occupy 0x30000000..0x3027ffff. Five cabinet frames occupy
+// 0x30300000..0x3064bbff. One read may be in flight; prefetch occupancy
+// and unread DDR occupancy are accounted independently.
 module mpeg2_av_ddr_fifo #(
     parameter ADDRESS_BITS=20,
-    parameter [28:0] BASE=29'h06080000
+    parameter [28:0] BASE=29'h060D0000
 )(
     input wire clk,reset,
     input wire [42:0] input_data,
