@@ -67,8 +67,9 @@ void retrotv_mount_poll()
         initialized = true;
         const char* name = core_filename();
         if (!strcasecmp(name, "RetroTV.mgl") || !strcasecmp(name, "RetroTV.rbf")) {
-            // The FPGA needs its startup bezel before switching to the DDR gallery.
-            if (!user_io_file_tx("/media/fat/games/RetroTV/v2/cabinet.raw", 2))
+            constexpr char startup_bezel[] = "/media/fat/games/RetroTV/v2/cabinet.raw";
+            // Index 2 fills the startup picture. Index 6 completes the FPGA's cabinet preload.
+            if (!user_io_file_tx(startup_bezel, 2) || !user_io_file_tx(startup_bezel, 6))
                 std::fprintf(stderr, "RetroTV could not load the startup bezel\n");
         } else if (strcasecmp(name, "RetroTV_2.rbf") && strcasecmp(name, "RetroTV_2.mgl")) {
             return;
