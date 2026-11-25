@@ -14,6 +14,8 @@ cycle through six cabinets. F4 returns to the default cabinet.
 
 ![RetroTV Moon channel on the Sony Trinitron XBR cabinet](docs/images/retrotv-moon-xbr.png)
 
+![Red Dwarf playing on the Zenith Space Command cabinet in RetroTV](docs/images/retrotv-zenith-red-dwarf.png)
+
 | Key | Action |
 | --- | --- |
 | Left / Right | Change channel |
