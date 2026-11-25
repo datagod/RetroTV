@@ -26,8 +26,8 @@ The installer adds the launcher and core, installs a RetroTV-specific Main
 binary and startup helper, and creates the six information channels. It
 preserves existing media, channel settings, and other startup entries.
 When it changes an existing `MiSTer.ini` or `linux/user-startup.sh`, it
-saves the previous file with a `.retrotv.bak` suffix. For upgrades, use
-the new ZIP and follow the same steps.
+saves the previous file with a `.retrotv.bak` suffix. For an upgrade, return to the MiSTer menu first.
+Then use the new ZIP and follow the same steps.
 
 ## Add your own channels
 
