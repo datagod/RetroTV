@@ -12,6 +12,8 @@ On 1080p HDMI, RetroTV opens on a late-1980s Trinitron XBR-inspired set.
 The tube opening displays a 720×480 picture pixel-for-pixel. Up and Down
 cycle through six cabinets. F4 returns to the default cabinet.
 
+![RetroTV Moon channel on the Sony Trinitron XBR cabinet](docs/images/retrotv-moon-xbr.png)
+
 | Key | Action |
 | --- | --- |
 | Left / Right | Change channel |
