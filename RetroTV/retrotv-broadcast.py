@@ -3,6 +3,7 @@
 
 from collections import deque
 from concurrent.futures import CancelledError, ThreadPoolExecutor
+from contextlib import ExitStack
 
 import json
 import os
@@ -10,6 +11,7 @@ from pathlib import Path
 import random
 import re
 import select
+import shutil
 import signal
 import socket
 import subprocess
@@ -138,6 +140,9 @@ def duration_ms(path, size):
 INDEX = ".retrotv-times.json"
 NEWS_MARKER = ".retrotv-news"
 SCREENSHOT_CHANNEL = "CH - 50 Screenshots"
+TEST_CARD_CHANNEL = "CH 0 - Test Cards"
+LEGACY_TEST_CARD_CHANNEL = "CH 51 - Test Cards"
+MOVIE_BREAK_MS = 20_000
 MOUNT_SOCKET = "/tmp/retrotv-video.sock"
 
 
@@ -170,14 +175,35 @@ def channel_order(path):
 def channel_folders(root):
     return sorted(
         (path for path in root.iterdir() if path.is_dir() and path.name not in {"cache", "live"} and
+         not path.name.startswith(".") and path.name != LEGACY_TEST_CARD_CHANNEL and
          "\n" not in path.name and "\r" not in path.name),
         key=channel_order,
     )
 
 
+def migrate_test_cards(root):
+    old = root / LEGACY_TEST_CARD_CHANNEL
+    new = root / TEST_CARD_CHANNEL
+    if old.is_dir() and not new.exists():
+        old.rename(new)
+    else:
+        new.mkdir(exist_ok=True)
+        if old.is_dir():
+            for path in old.iterdir():
+                target = new / path.name
+                if path.is_file() and not target.exists():
+                    shutil.copy2(path, target)
+            archive = Path(tempfile.mkdtemp(prefix=".retrotv-channel-51-", dir=root))
+            old.rename(archive / old.name)
+    last = root / "last"
+    if first_line(last) == LEGACY_TEST_CARD_CHANNEL:
+        atomic_text(last, TEST_CARD_CHANNEL + "\n")
+
+
 def list_channels(root):
+    migrate_test_cards(root)
     for folder in channel_folders(root):
-        if folder.name == SCREENSHOT_CHANNEL or (folder / NEWS_MARKER).is_file():
+        if folder.name in {SCREENSHOT_CHANNEL, TEST_CARD_CHANNEL} or (folder / NEWS_MARKER).is_file():
             print(folder.name)
             continue
         manifest = folder / "music.json"
@@ -258,13 +284,14 @@ def clock_epoch():
     return epoch
 
 
-def clock_position(clips, elapsed_ms):
+def clock_position(clips, elapsed_ms, break_ms=0):
     total = sum(duration for _, duration in clips)
-    position = max(0, elapsed_ms) % total
+    position = max(0, elapsed_ms) % (total + break_ms)
     for path, duration in clips:
         if position < duration:
             return path, position
         position -= duration
+    return None, position
 
 
 def choose_clip(clips, mode, active, elapsed_ms):
@@ -360,6 +387,7 @@ def browse_channels(channels, current, key, tty_fd):
 IMAGE_SUFFIXES = {".jpg", ".jpeg", ".png"}
 COMMAND_FIFO = Path("/dev/MiSTer_cmd")
 CHANNEL_LIST = Path("/tmp/retrotv-chans")
+INPUT_SOCKET = Path("/tmp/retrotv-input.sock")
 RESCAN = Path("/tmp/retrotv-rescan-mpg")
 ACTIVE = Path("/tmp/retrotv-active-mpg")
 ACTIVE_PID = Path("/tmp/retrotv-active-mpg-pid")
@@ -385,6 +413,8 @@ def prepare_channel(folder):
     """Classify a channel and resolve indexed clips without opening video."""
     if folder.name == SCREENSHOT_CHANNEL:
         return "screenshots", None
+    if folder.name == TEST_CARD_CHANNEL:
+        return "testcards", None
     if (folder / NEWS_MARKER).is_file():
         return "news", None
     clips = []
@@ -426,6 +456,7 @@ class ChannelPlayback:
         self.stopping = False
         self.control = None
         self.control_dir = None
+        self.card_break = None
 
     def interrupt(self):
         if self.process is not None and not self.stopping:
@@ -433,6 +464,7 @@ class ChannelPlayback:
             self.stopping = True
 
     def stop(self):
+        self.card_break = None
         if self.process is not None:
             self.interrupt()
             try:
@@ -449,12 +481,14 @@ class ChannelPlayback:
             self.control_dir.cleanup()
             self.control_dir = None
 
-    def start_media(self, folder, kind, how, begin):
+    def start_media(self, folder, kind, how, begin, duration=None):
         if kind == "news":
             command = [sys.executable, "-u", str(NEWS_PROGRAM), str(folder)]
         else:
             command = [sys.executable, "-u", str(MUSIC_PROGRAM), kind, str(folder)]
         command += ["--tty", str(self.controller.tty_path)]
+        if duration is not None:
+            command += ["--seconds", str(duration)]
         if kind == "play":
             self.control_dir = tempfile.TemporaryDirectory(prefix="retrotv-music-", dir="/tmp")
             fifo = Path(self.control_dir.name) / "control"
@@ -471,18 +505,22 @@ class ChannelPlayback:
             path.unlink(missing_ok=True)
         return True
 
-    def mount(self, folder, clips, mode, label, begin, finish):
-        if clips is None:
-            clips, _ = index_channel(folder)
-        elapsed_ms = int((time.time() - self.controller.epoch) * 1000)
-        clip, into = choose_clip(clips, mode, first_line(ACTIVE), elapsed_ms)
-        seconds = into // 1000
+    def mount(self, clip, offset_ms, label, begin, finish):
+        seconds = offset_ms // 1000
         if not mount_clip(clip, seconds, label, self.controller.tty_path, begin, finish):
             return False
         atomic_text(ACTIVE, str(clip) + "\n")
         atomic_text(ACTIVE_PID, str(self.controller.host_pid) + "\n")
-        print("mounted [%s] %s +%ds" % (folder.name, clip.name, seconds), flush=True)
+        print("mounted [%s] %s +%ds" % (clip.parent.name, clip.name, seconds), flush=True)
         return True
+
+    def start_break(self, channel, clip, duration_ms, begin):
+        if self.start_media(self.controller.root / TEST_CARD_CHANNEL, "test-card", "", begin,
+                            duration_ms / 1000):
+            self.card_break = (channel, clip)
+            print("Test-card break [%s] for %.2fs" % (channel, duration_ms / 1000), flush=True)
+            return True
+        return False
 
     def tune(self, channel, how, serial, prepared=None):
         controller = self.controller
@@ -498,8 +536,17 @@ class ChannelPlayback:
                 return controller.send_current(serial, prefix + command)
 
             if kind == "video":
-                playing = self.mount(folder, clips, "elapsed", channel, begin,
-                                     lambda frame: controller.send_current(serial, frame))
+                if clips is None:
+                    clips, _ = index_channel(folder)
+                if not clips:
+                    raise ValueError("Channel contains no playable MPG files")
+                elapsed_ms = int((time.time() - controller.epoch) * 1000)
+                clip, into = clock_position(clips, elapsed_ms, MOVIE_BREAK_MS)
+                if clip is None:
+                    playing = self.start_break(channel, clips[0][0], MOVIE_BREAK_MS - into, begin)
+                else:
+                    playing = self.mount(clip, into, channel, begin,
+                                         lambda frame: controller.send_current(serial, frame))
             else:
                 playing = self.start_media(folder, kind, how, begin)
             if playing:
@@ -509,10 +556,11 @@ class ChannelPlayback:
             print("Could not tune [%s]: %s" % (channel, error), flush=True)
             controller.send_current(serial, b"\xc4")
 
-    def control_key(self, key, serial):
-        if not self.controller.is_current(serial):
+    def control_key(self, key, serial, eof=False):
+        controller = self.controller
+        if not controller.is_current(serial):
             return
-        if self.process is not None:
+        if self.process is not None and self.card_break is None:
             if self.control is not None:
                 try:
                     os.write(self.control, CONTROLS[key] + b"\n")
@@ -521,22 +569,56 @@ class ChannelPlayback:
             return
         if key not in (0xA9, 0xAA):
             return
-        controller = self.controller
         channel = first_line(controller.last)
         try:
             if not channel:
                 raise ValueError("No active channel")
+            folder = controller.root / channel
+            kind, clips = prepare_channel(folder)
+            if kind != "video":
+                return
+            if clips is None:
+                clips, _ = index_channel(folder)
+            if not clips:
+                raise ValueError("Channel contains no playable MPG files")
+
             def send(frame):
                 return controller.send_current(serial, frame)
-            self.mount(controller.root / channel, None, "next" if key == 0xA9 else "previous",
-                       "", send, send)
+
+            if self.card_break is not None:
+                if eof:
+                    return
+                self.stop()
+                clip = clips[0 if key == 0xA9 else -1][0]
+            else:
+                active = first_line(ACTIVE)
+                if eof and active == str(clips[-1][0]):
+                    self.start_break(channel, clips[0][0], MOVIE_BREAK_MS, send)
+                    return
+                clip, _ = choose_clip(clips, "next" if key == 0xA9 else "previous", active, 0)
+            self.mount(clip, 0, "", send, send)
         except (OSError, ValueError, RuntimeError) as error:
             print("Could not advance [%s]: %s" % (channel, error), flush=True)
             controller.send_current(serial, b"\xc4")
 
     def check(self, serial):
+        if not self.controller.is_current(serial):
+            return
         if self.process is not None and self.process.poll() is not None:
+            card_break = self.card_break
             self.stop()
+            if card_break is not None:
+                channel, clip = card_break
+
+                def send(frame):
+                    return self.controller.send_current(serial, frame)
+
+                try:
+                    self.mount(clip, 0, "", send, send)
+                except (OSError, ValueError, RuntimeError) as error:
+                    print("Could not restart [%s]: %s" % (channel, error), flush=True)
+                    send(b"\xc4")
+                return
             print("slideshow or music worker stopped", flush=True)
             self.controller.send_current(serial, b"\xc4")
 
@@ -584,6 +666,13 @@ class ChannelListener:
             os.write(self.tty, frame)
             return True
 
+    def publish_scene(self, frame):
+        with self.guard:
+            if self.closed:
+                return False
+            os.write(self.tty, frame)
+            return True
+
     def submit_playback(self, operation, *args):
         task = self.executor.submit(operation, *args)
         task.add_done_callback(self.report_worker_error)
@@ -621,8 +710,9 @@ class ChannelListener:
             self.send_current(self.serial, preview_frame(name))
             sent = time.monotonic()
             self.visible_until = sent + CHANNEL_LABEL_SECONDS
-            print("tune %02x -> [%s] (label sent in %.1fms)" %
-                  (direction, name, (sent - pressed_at) * 1000), flush=True)
+            action = "guide" if direction is None else "%02x" % direction
+            print("tune %s -> [%s] (label sent in %.1fms)" %
+                  (action, name, (sent - pressed_at) * 1000), flush=True)
 
     def preview(self, key, now):
         if not self.channels:
@@ -630,14 +720,17 @@ class ChannelListener:
         if not self.channels:
             self.send_current(self.serial, b"\xc4")
             return
-        self.start_at = None
-        self.next_serial()
         step = CHANNEL_STEPS[key]
         if self.channel in self.channels:
             index = self.channels.index(self.channel)
         else:
             index = -1 if step > 0 else 0
-        self.channel = self.channels[(index + step) % len(self.channels)]
+        self.select_channel(self.channels[(index + step) % len(self.channels)], key, now)
+
+    def select_channel(self, name, key, now):
+        self.start_at = None
+        self.next_serial()
+        self.channel = name
         self.labels.append((key, self.channel, now))
         self.show_label(now)
         if self.settle_at is None:
@@ -646,6 +739,17 @@ class ChannelListener:
             self.prepared.cancel()
         self.prepared = self.executor.submit(prepare_channel, self.root / self.channel)
         self.settle_at = now + CHANNEL_SETTLE_SECONDS
+
+    def handle_input(self, command, now):
+        if command.startswith(b"tune "):
+            self.refresh_channels()
+            name = os.fsdecode(command[5:])
+            if name in self.channels:
+                self.labels.clear()
+                self.visible_until = now
+                self.select_channel(name, None, now)
+        elif command == b"next" and self.settle_at is None:
+            self.submit_playback(self.playback.control_key, 0xA9, self.serial)
 
     def tune_due(self, now):
         self.show_label(now)
@@ -685,16 +789,26 @@ class ChannelListener:
 
     def run(self):
         self.tty = os.open(self.tty_path, os.O_RDWR | os.O_NONBLOCK | os.O_NOCTTY)
+        from retrotv_scenes import run_scenes
+        from retrotv_screenshots import open_image_controls
+
+        scene_stop = threading.Event()
+        scenery = threading.Thread(target=run_scenes, args=(
+            self.root.parent / "scenes", self.publish_scene, scene_stop), daemon=True)
+        scenery.start()
         housekeeping_at = 0
+        controls = ExitStack()
         try:
+            input_port = controls.enter_context(open_image_controls(INPUT_SOCKET))
+            input_port.setblocking(False)
             while True:
                 deadline = housekeeping_at
                 if self.settle_at is not None:
                     preview_at = self.visible_until if self.labels else max(self.settle_at, self.visible_until)
                     deadline = min(deadline, preview_at)
-                ready, _, _ = select.select([self.tty], [], [], max(0, deadline - time.monotonic()))
+                ready, _, _ = select.select([self.tty, input_port], [], [], max(0, deadline - time.monotonic()))
                 events = b""
-                if ready:
+                if self.tty in ready:
                     try:
                         events = os.read(self.tty, 64)
                     except BlockingIOError:
@@ -721,7 +835,10 @@ class ChannelListener:
                     if key in CHANNEL_STEPS:
                         self.preview(key, now)
                     elif key in CONTROLS and self.settle_at is None:
-                        self.submit_playback(self.playback.control_key, key, self.serial)
+                        # Main forwards the manual N key separately, leaving A9 for EOF.
+                        self.submit_playback(self.playback.control_key, key, self.serial, key == 0xA9)
+                if input_port in ready:
+                    self.handle_input(input_port.recv(512), time.monotonic())
                 # Read queued keys before committing a selection at its deadline.
                 now = time.monotonic()
                 if now >= housekeeping_at:
@@ -731,8 +848,11 @@ class ChannelListener:
                     housekeeping_at = now + .2
                 self.tune_due(now)
         finally:
+            controls.close()
+            scene_stop.set()
             with self.guard:
                 self.closed = True
+            scenery.join()
             self.executor.shutdown(wait=True, cancel_futures=True)
             self.playback.stop()
             os.close(self.tty)

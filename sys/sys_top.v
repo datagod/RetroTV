@@ -633,7 +633,7 @@ sysmem_lite sysmem
 	.ram1_write(ram_write),
 
 	//64-bit DDR3 RAM access
-	.ram2_clk(clk_audio),
+	.ram2_clk(clk_100m),
 	.ram2_address(ram2_address),
 	.ram2_burstcount(ram2_burstcount),
 	.ram2_waitrequest(ram2_waitrequest),
@@ -669,9 +669,39 @@ wire        ram2_read;
 wire        ram2_write;
 wire  [7:0] ram2_bcnt;
 
+wire [28:0] scene_read_address;
+wire        scene_read_request;
+wire [63:0] scene_read_data;
+wire        scene_read_valid;
+
+`ifndef MISTER_DISABLE_ALSA
+wire [29:0] alsa_command_mem;
+wire [63:0] alsa_data_mem;
+wire        alsa_ready_mem;
+reg  [64:0] alsa_result_mem = 0;
+wire [64:0] alsa_result_audio;
+reg         alsa_result_seen = 0;
+
+video_config_cdc #(.WIDTH(30)) alsa_read_command (
+	.src_clk(clk_audio), .dst_clk(clk_100m),
+	.src_data({alsa_req, alsa_address}), .dst_data(alsa_command_mem)
+);
+always @(posedge clk_100m) begin
+	if (alsa_ready_mem)
+		alsa_result_mem <= {~alsa_result_mem[64], alsa_data_mem};
+end
+video_config_cdc #(.WIDTH(65)) alsa_read_result (
+	.src_clk(clk_100m), .dst_clk(clk_audio),
+	.src_data(alsa_result_mem), .dst_data(alsa_result_audio)
+);
+always @(posedge clk_audio) alsa_result_seen <= alsa_result_audio[64];
+assign alsa_readdata = alsa_result_audio[63:0];
+assign alsa_ready = alsa_result_audio[64] != alsa_result_seen;
+`endif
+
 ddr_svc ddr_svc
 (
-	.clk(clk_audio),
+	.clk(clk_100m),
 
 	.ram_waitrequest(ram2_waitrequest),
 	.ram_burstcnt(ram2_burstcount),
@@ -685,11 +715,11 @@ ddr_svc ddr_svc
 	.ram_bcnt(ram2_bcnt),
 
 `ifndef MISTER_DISABLE_ALSA
-	.ch0_addr(alsa_address),
-	.ch0_burst(1),
-	.ch0_data(alsa_readdata),
-	.ch0_req(alsa_req),
-	.ch0_ready(alsa_ready),
+	.ch0_addr(alsa_command_mem[28:0]),
+	.ch0_burst(8'd1),
+	.ch0_data(alsa_data_mem),
+	.ch0_req(alsa_command_mem[29]),
+	.ch0_ready(alsa_ready_mem),
 `else
 	.ch0_addr(29'd0),
 	.ch0_burst(8'd0),
@@ -699,13 +729,19 @@ ddr_svc ddr_svc
 `endif
 
 	.ch1_addr(pal_addr),
-	.ch1_burst(128),
+	.ch1_burst(8'd128),
 	.ch1_data(pal_data),
 	.ch1_req(pal_req),
-	.ch1_ready(pal_wr)
+	.ch1_ready(pal_wr),
+
+	.ch2_addr(scene_read_address),
+	.ch2_burst(8'd32),
+	.ch2_data(scene_read_data),
+	.ch2_req(scene_read_request),
+	.ch2_ready(scene_read_valid)
 );
 
-wire clk_pal = clk_audio;
+wire clk_pal = clk_100m;
 
 
 wire  [27:0] vbuf_address;
@@ -1208,6 +1244,37 @@ cyclonev_hps_interface_peripheral_i2c hdmi_i2c
 	wire dis_output = 0;
 	`endif
 
+	wire [23:0] hdmi_data_scene;
+	wire        hdmi_de_scene, hdmi_vs_scene, hdmi_hs_scene, hdmi_brd_scene;
+	wire [1:0] scene_hdmi;
+	wire native_window_hdmi;
+	wire native_window_video = hmin == 12'd448 && hmax == 12'd1471 &&
+	                           vmin == 12'd180 && vmax == 12'd899;
+	wire full_hd_sys = WIDTH == 12'd1920 && HEIGHT == 12'd1080 && !LFB_EN && !direct_video;
+
+	video_config_cdc #(.WIDTH(2)) scene_config (
+		.src_clk(player_ui_clock), .dst_clk(clk_hdmi),
+		.src_data(retrotv_scene), .dst_data(scene_hdmi)
+	);
+	wire full_hd_hdmi;
+	video_config_cdc #(.WIDTH(1)) scene_resolution (
+		.src_clk(clk_sys), .dst_clk(clk_hdmi),
+		.src_data(full_hd_sys), .dst_data(full_hd_hdmi)
+	);
+	video_config_cdc #(.WIDTH(1)) scene_native_window (
+		.src_clk(clk_vid), .dst_clk(clk_hdmi),
+		.src_data(native_window_video), .dst_data(native_window_hdmi)
+	);
+
+	retrotv_scene_overlay scene_overlay (
+		.reset(reset), .video_clk(clk_hdmi), .mem_clk(clk_100m),
+		.scene({scene_hdmi[1] && full_hd_hdmi && native_window_hdmi, scene_hdmi[0]}),
+		.rgb(hdmi_data), .hs(hdmi_hs), .vs(hdmi_vs), .de(hdmi_de), .border(hdmi_brd),
+		.rgb_out(hdmi_data_scene), .hs_out(hdmi_hs_scene), .vs_out(hdmi_vs_scene),
+		.de_out(hdmi_de_scene), .border_out(hdmi_brd_scene),
+		.read_address(scene_read_address), .read_request(scene_read_request),
+		.read_data(scene_read_data), .read_valid(scene_read_valid)
+	);
 	wire [23:0] hdmi_data_mask;
 	wire        hdmi_de_mask, hdmi_vs_mask, hdmi_hs_mask;
 
@@ -1222,11 +1289,11 @@ cyclonev_hps_interface_peripheral_i2c hdmi_i2c
 		.cmd_wr(shadowmask_wr),
 		.cmd_in(shadowmask_data),
 
-		.din(dis_output ? 24'd0 : hdmi_data),
-		.hs_in(hdmi_hs),
-		.vs_in(hdmi_vs),
-		.de_in(hdmi_de),
-		.brd_in(hdmi_brd),
+		.din(dis_output ? 24'd0 : hdmi_data_scene),
+		.hs_in(hdmi_hs_scene),
+		.vs_in(hdmi_vs_scene),
+		.de_in(hdmi_de_scene),
+		.brd_in(hdmi_brd_scene),
 		.enable(~lfb_enable_hdmi),
 
 		.dout(hdmi_data_mask),
@@ -1270,6 +1337,9 @@ cyclonev_hps_interface_peripheral_i2c hdmi_i2c
 
 	wire hdmi_cs_osd;
 	csync csync_hdmi(clk_hdmi, hdmi_hs_osd, hdmi_vs_osd, hdmi_cs_osd);
+`else
+	assign scene_read_address = 0;
+	assign scene_read_request = 0;
 `endif
 
 reg [23:0] dv_data;
@@ -1833,6 +1903,7 @@ wire [13:0] fb_stride;
 `endif
 
 wire [12:0] player_meta_address;
+wire [1:0] retrotv_scene;
 wire [7:0] player_meta_data;
 wire [16:0] player_meta_state;
 wire player_ui_clock;
@@ -1869,6 +1940,7 @@ emu emu
 	.PLAYER_META_ADDRESS(player_meta_address),
 	.PLAYER_META_DATA(player_meta_data),
 	.PLAYER_META_STATE(player_meta_state),
+	.RETROTV_SCENE(retrotv_scene),
 	.PLAYER_UI_CLOCK(player_ui_clock),
 	.PLAYER_UI_STATE(player_ui_state),
 	.PLAYER_SUBTITLE_COMMAND(player_subtitle_command),

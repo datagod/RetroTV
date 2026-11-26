@@ -1,15 +1,29 @@
 """Show the screenshots channel using RetroTV's existing still-image banks."""
 
+from contextlib import contextmanager
 from pathlib import Path
 import select
 import socket
 import time
 
-CONTROL = Path("/tmp/retrotv-screenshots.sock")
+GALLERY_CONTROL = Path("/tmp/retrotv-screenshots.sock")
+SLIDESHOW_CONTROL = Path("/tmp/retrotv-slideshow.sock")
 FRAME_INTERVAL = .05
 SLIDE_INTERVAL = 20
 FRAMES = 9
 FONT = Path(__file__).with_name("retrotv-news-font.mem")
+
+
+@contextmanager
+def open_image_controls(path):
+    with socket.socket(socket.AF_UNIX, socket.SOCK_DGRAM) as port:
+        path.unlink(missing_ok=True)
+        port.bind(str(path))
+        try:
+            path.chmod(0o600)
+            yield port
+        finally:
+            path.unlink(missing_ok=True)
 
 
 def slide_rows(outgoing, incoming, width, height, distance, forward):
@@ -131,23 +145,17 @@ class Gallery:
             self.advance(1 if command == b"n" else -1)
 
     def run(self):
-        with socket.socket(socket.AF_UNIX, socket.SOCK_DGRAM) as port:
-            CONTROL.unlink(missing_ok=True)
-            port.bind(str(CONTROL))
-            CONTROL.chmod(0o600)
-            try:
-                self.advance(1)
-                while True:
-                    deadline = self.deadline if self.confirmation is None else None
-                    wait = .5 if deadline is None else min(.5, max(0, deadline - time.monotonic()))
-                    readable, _, _ = select.select([port], [], [], wait)
-                    if readable:
-                        self.key(port.recv(8))
-                    elif self.path is None:
-                        images = self.images()
-                        if images:
-                            self.advance(1, images)
-                    elif deadline is not None and time.monotonic() >= deadline:
-                        self.advance(1)
-            finally:
-                CONTROL.unlink(missing_ok=True)
+        with open_image_controls(GALLERY_CONTROL) as port:
+            self.advance(1)
+            while True:
+                deadline = self.deadline if self.confirmation is None else None
+                wait = .5 if deadline is None else min(.5, max(0, deadline - time.monotonic()))
+                readable, _, _ = select.select([port], [], [], wait)
+                if readable:
+                    self.key(port.recv(8))
+                elif self.path is None:
+                    images = self.images()
+                    if images:
+                        self.advance(1, images)
+                elif deadline is not None and time.monotonic() >= deadline:
+                    self.advance(1)

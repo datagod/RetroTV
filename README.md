@@ -3,14 +3,19 @@
 RetroTV turns a MiSTer FPGA into a channel-surfing CRT. Add your own movies,
 music, or pictures, or tune to the built-in blue information channels.
 Movies on each channel run on a shared broadcast clock, so switching back
-joins the program already in progress.
+joins the program already in progress. Each video playlist wraps through
+a 20-second random test card before the first video starts again.
 
 [Download RetroTV for MiSTer](https://github.com/datagod/RetroTV/releases/latest) ·
 [Installation and setup](INSTALL.md)
 
 On 1080p HDMI, RetroTV opens on a late-1980s Trinitron XBR-inspired set.
 The tube opening displays a 720×480 picture pixel-for-pixel. Up and Down
-cycle through six cabinets. F4 returns to the default cabinet.
+cycle through twenty-three cabinets, including original arcade designs for
+Defender, Robotron, and Pac-Man and TV sets inspired by Nintendo, Sega, Atari,
+Sony PlayStation, and NEC TurboGrafx. Hold Shift with Up or Down to cycle through nineteen backgrounds,
+including solid black, ten period living rooms, and five arcades. F4 returns to
+the default cabinet. The loading screen shows the keyboard controls.
 
 ![RetroTV Moon channel on the Sony Trinitron XBR cabinet](docs/images/retrotv-moon-xbr.png)
 
@@ -20,10 +25,13 @@ cycle through six cabinets. F4 returns to the default cabinet.
 | --- | --- |
 | Left / Right | Change channel |
 | Up / Down | Change cabinet |
+| Shift + Up / Down | Change the background at 1080p |
+| F1 | Open the channel guide. Type two digits to tune, such as `00` or `13` |
 | F4 | Return to the default XBR cabinet |
 | N / P | Next / previous video or song |
 | Space | Pause or resume |
 | M | Mute or unmute |
+| Page Up / Page Down | Next / previous slideshow image, or faster / slower text on scrolling channels |
 | Print Screen | Save the TV picture to CH 50 |
 | Esc | Return to the MiSTer menu |
 
@@ -31,6 +39,7 @@ cycle through six cabinets. F4 returns to the default cabinet.
 
 | Channel | What it shows |
 | --- | --- |
+| 0 · Test Cards | Broadcast test patterns. Add regional cards with the [test-card setup](INSTALL.md#add-more-test-cards) |
 | 12 · News | World headlines from BBC, NPR, and Deutsche Welle |
 | 13 · Stock News | Tech, AI and space headlines, with available market quotes |
 | 14 · Weather | Nearby observations and a local forecast |
@@ -39,14 +48,16 @@ cycle through six cabinets. F4 returns to the default cabinet.
 | 17 · Moon | Local phase, sky position, moonrise and moonset in one still snapshot per day |
 | 50 · Screenshots | Saved TV pictures with slide transitions |
 
-The RetroTV installer includes these channels, the cabinet artwork, and a
-stock image for music channels.
+The RetroTV installer includes these channels, the cabinet and background
+artwork, and a stock image for music channels. On scrolling channels, each
+Page Up or Page Down press changes the text speed by 20% of the normal
+rate. The speed carries over between scrolling channels until RetroTV is
+restarted.
 
 ## Optional channels
 
 | Channel | What it shows |
 | --- | --- |
-| 51 · Test Cards | Seven vintage broadcast test cards from five regions, one every 20 seconds. [Setup](INSTALL.md#add-the-test-card-channel) · [Sources and credits](RetroTV/TEST_CARDS.md) |
 | 52 · Fireplace | A five-minute excerpt of a crackling wood fire from Berkeley Community Media. [Original footage, license, and credits](RetroTV/FIREPLACE.md) |
 
 To add Fireplace, put a RetroTV-compatible `.mpg` file in

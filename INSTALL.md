@@ -33,13 +33,16 @@ Then use the new ZIP and follow the same steps.
 
 Create numbered folders in `/media/fat/games/RetroTV/channels/`. Use a
 folder name like `CH 1 - Cartoons`, with a unique channel number. The
-built-in channels use numbers 12–17.
+built-in channels use 0, 12–17, and 50.
 
 - **Video.** Use progressive MPEG-2 Program Stream `.mpg` files with MP2
   audio. The standard picture is 720×480 at 29.97 fps. Files play directly,
-  in filename order, on the broadcast clock.
+  in filename order, on the broadcast clock. After the last video, a
+  random test card plays for 20 seconds before the first video starts again.
 - **Pictures.** Use PNG or JPEG files. Images advance in filename order
-  every 20 seconds. A 720×480 image fills the tube.
+  every 20 seconds. Use **Page Up** for the next image and **Page Down** for
+  the previous image, including when the slideshow has music. A 720×480
+  image fills the tube.
 - **Music.** Add MP3s to a picture folder to play music during the slideshow.
   A music folder without pictures uses the included stock image.
 
@@ -47,11 +50,19 @@ Run **Scripts → Analyze RetroTV Channels** after adding, removing, or
 replacing media. The analyzer updates the channel list and duration
 indexes. It leaves the media files as supplied.
 
-## Add the test card channel
+## Open the channel guide
 
-CH 51 plays seven test cards from Canada, the United States, the United
-Kingdom, continental Europe, and Australia. It advances every 20 seconds.
-See the [card sources and credits](RetroTV/TEST_CARDS.md).
+Press **F1** for the channel guide, which lists up to 14 channels per page.
+Type two digits to tune immediately,
+such as `00` for Test Cards or `02` for Channel 2. You can also highlight a
+channel with **Up** and **Down** and press **Enter**. **Esc** closes the guide.
+
+## Add more test cards
+
+Channel 0 uses a built-in test pattern and can play regional cards from
+Canada, the United States, the United Kingdom, continental Europe, and
+Australia. Cards advance every 20 seconds. RetroTV moves the old CH 51
+collection to Channel 0 on upgrade. See the [card sources and credits](RetroTV/TEST_CARDS.md).
 
 From the RetroTV source checkout, run this on a computer with Python 3.9+
 and Internet access. Pass the path to the existing RetroTV channels folder
@@ -64,12 +75,25 @@ python3 RetroTV/setup_test_cards.py "/path/to/games/RetroTV/channels"
 You can also copy `setup_test_cards.py` and `TEST_CARDS.md` into the same
 folder on your MiSTer and run `python3 setup_test_cards.py` there. The
 script checks the downloaded images and preserves existing channel files.
-Run **Scripts → Analyze RetroTV Channels** afterward, then tune to CH 51.
+Run **Scripts → Analyze RetroTV Channels** afterward, then tune to CH 0.
+
+## Choose a cabinet and background
+
+At 1920×1080 HDMI, **Up** and **Down** choose the cabinet. Hold **Shift**
+with either key to cycle through the backgrounds. Choose from solid black,
+ten living rooms from the 1940s–1960s, the original mid-century living room,
+the retro media room, the spacecraft bay, and five early-1980s arcades.
+**F4** returns to the default XBR cabinet. The video opening is 720×480 pixels.
+
+On scrolling information channels, **Page Up** makes the text faster and
+**Page Down** makes it slower. Each press adjusts the speed by 20% of the
+normal rate, within a range of 20%–240%. The Moon channel is a still image.
 
 ## Capture and view screenshots
 
 Press **Print Screen** in RetroTV to save a PNG of the cabinet and its
 picture to `/media/fat/games/RetroTV/channels/CH - 50 Screenshots/`.
+At 1080p the PNG includes the selected background.
 CH 50 starts with the latest capture and advances every 20 seconds. The
 current picture slides left as the next one enters from the right.
 

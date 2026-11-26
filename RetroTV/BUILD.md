@@ -35,4 +35,18 @@ Makefile and license, and GitHub's tagged RetroTV source archive.
 
 The source PNGs and generated frames are included. With Pillow installed,
 regenerate the cabinet gallery and startup frame using
-`python3 RetroTV/make_xbr_cabinets.py`.
+`python3 RetroTV/make_xbr_cabinets.py`. Pack the 1080p cabinet overlays and
+background photographs with `python3 RetroTV/make_scene_assets.py` before
+building the installer.
+
+Keep the Linux and FPGA DDR addresses in sync. These reserved ranges are
+contiguous, with each upper bound exclusive.
+
+| Content | Physical byte range |
+| --- | --- |
+| Blue-channel pages (two banks per layout) | `0x32800000`–`0x35800000` |
+| Four additional cabinet frames for the fallback view | `0x35800000`–`0x36000000` |
+| Full-HD scenery (two banks) | `0x36000000`–`0x36800000` |
+| Five game-company cabinet frames for the fallback view | `0x36800000`–`0x37200000` |
+| Five arcade cabinet frames for the fallback view | `0x37200000`–`0x37C00000` |
+| Three classic-title arcade frames for the fallback view | `0x37C00000`–`0x38200000` |

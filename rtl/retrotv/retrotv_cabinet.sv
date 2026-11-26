@@ -14,10 +14,10 @@
 // 36..142 (pixels 144..571). Pixels outside the set stay clear for a later
 // wall. A missed line stays transparent.
 
-module retrotv_pixel_fifo (
+module retrotv_pixel_fifo #(parameter DATA_WIDTH = 16) (
     input  wire        wr_clk,
     input  wire        wr_reset,
-    input  wire [15:0] wr_data,
+    input  wire [DATA_WIDTH-1:0] wr_data,
     input  wire        wr_en,
     output wire        wr_full,
     output wire [8:0]  wr_level,
@@ -26,9 +26,9 @@ module retrotv_pixel_fifo (
     input  wire        rd_reset,
     input  wire        rd_en,
     output wire        rd_empty,
-    output reg  [15:0] rd_data
+    output reg  [DATA_WIDTH-1:0] rd_data
 );
-    (* ramstyle = "M10K" *) reg [15:0] mem [0:255];
+    (* ramstyle = "M10K" *) reg [DATA_WIDTH-1:0] mem [0:255];
 
     reg [8:0] wr_bin;
     reg [8:0] wr_gray;
@@ -152,6 +152,7 @@ module retrotv_cabinet (
     input  wire        xbr,
     input  wire        xbr_requested,
     input  wire        xbr_gallery,
+    input  wire [4:0]  xbr_last_slot,
     input  wire [2:0]  music_art,
     input  wire        ioctl_download,
     input  wire [15:0] ioctl_index,
@@ -247,21 +248,34 @@ wire our_file = ioctl_download && (ioctl_index[5:0] >= 6'd2) &&
 reg        our_d = 1'b0;
 reg [5:0]  reset_cnt = 6'd0;
 reg [2:0]  slot_sys = 3'd0;
-reg [2:0]  xbr_slot_sys = 3'd0;
+reg [4:0]  xbr_slot_sys = 5'd0;
 reg [2:0]  wr_slot_sys = 3'd0;
 reg        key_toggle = 1'b0;
 reg        up_down = 1'b0;
 reg        down_down = 1'b0;
+reg        page_up_down = 1'b0;
+reg        page_down_down = 1'b0;
+// Rate is measured in sixteenths of a line per input frame. The normal
+// rate is 15/16, and each key changes it by a fifth of that rate.
+reg [5:0]  news_rate = 6'd15;
+wire [5:0] news_rate_mem;
+video_config_cdc #(.WIDTH(6)) news_rate_config (
+    .src_clk(clk_sys), .dst_clk(clk_mem),
+    .src_data(news_rate), .dst_data(news_rate_mem)
+);
 
 always @(posedge clk_sys) begin
     if (reset_sys) begin
         our_d <= 1'b0;
         reset_cnt <= 6'd0;
         slot_sys <= 3'd0;
-        xbr_slot_sys <= 3'd0;
+        xbr_slot_sys <= 5'd0;
         wr_slot_sys <= 3'd0;
         up_down <= 1'b0;
         down_down <= 1'b0;
+        page_up_down <= 1'b0;
+        page_down_down <= 1'b0;
+        news_rate <= 6'd15;
         key_toggle <= ps2_key[10];
     end
     else begin
@@ -283,7 +297,7 @@ always @(posedge clk_sys) begin
             case (ps2_key[8:0])
                 9'h00c: begin // F4 returns to the default XBR cabinet.
                     if (ps2_key[9] && !osd_open)
-                        xbr_slot_sys <= 3'd0;
+                        xbr_slot_sys <= 5'd0;
                 end
                 9'h175: begin
                     up_down <= ps2_key[9];
@@ -291,19 +305,29 @@ always @(posedge clk_sys) begin
                         if (!xbr_requested)
                             slot_sys <= slot_sys == 3'd4 ? 3'd0 : slot_sys + 3'd1;
                         else if (xbr_gallery)
-                            xbr_slot_sys <= xbr_slot_sys == 3'd5 ? 3'd0 : xbr_slot_sys + 3'd1;
+                            xbr_slot_sys <= xbr_slot_sys == xbr_last_slot ? 5'd0 : xbr_slot_sys + 5'd1;
                     end
                 end
                 9'h172: begin
                     down_down <= ps2_key[9];
                     if (ps2_key[9] && !down_down && !osd_open && xbr_requested && xbr_gallery)
-                        xbr_slot_sys <= xbr_slot_sys == 3'd0 ? 3'd5 : xbr_slot_sys - 3'd1;
+                        xbr_slot_sys <= xbr_slot_sys == 5'd0 ? xbr_last_slot : xbr_slot_sys - 5'd1;
+                end
+                9'h17d: begin // Page Up reaches the core on scrolling channels.
+                    page_up_down <= ps2_key[9];
+                    if (ps2_key[9] && !page_up_down && !osd_open && music_art[2:1] == 2'b11 && news_rate < 6'd36)
+                        news_rate <= news_rate + 6'd3;
+                end
+                9'h17a: begin
+                    page_down_down <= ps2_key[9];
+                    if (ps2_key[9] && !page_down_down && !osd_open && music_art[2:1] == 2'b11 && news_rate > 6'd3)
+                        news_rate <= news_rate - 6'd3;
                 end
                 default: ;
             endcase
         end
-        if (!xbr_gallery)
-            xbr_slot_sys <= 3'd0;
+        if (!xbr_gallery || xbr_slot_sys > xbr_last_slot)
+            xbr_slot_sys <= 5'd0;
     end
 end
 
@@ -367,9 +391,9 @@ reg [63:0] pack_word = 64'd0;
 reg        loaded = 1'b0;
 reg        storing = 1'b0;
 reg [2:0]  view_slot = 3'd0;
-reg [2:0]  view_xbr_slot = 3'd0;
-wire [2:0] xbr_slot_mem;
-video_config_cdc #(.WIDTH(3)) xbr_slot_config (
+reg [28:0] view_xbr_frame_base = 29'h06360000;
+wire [4:0] xbr_slot_mem;
+video_config_cdc #(.WIDTH(5)) xbr_slot_config (
     .src_clk(clk_sys), .dst_clk(clk_mem), .src_data(xbr_slot_sys), .dst_data(xbr_slot_mem));
 
 reg [2:0]  state = ST_IDLE;
@@ -429,11 +453,15 @@ localparam [28:0] ART_BASE1 = 29'h061DA000; // physical 0x30ED0000
 reg [2:0] art_m1 = 3'b000, art_m2 = 3'b000;
 reg [2:0] art_frame = 3'b000;
 reg [11:0] news_scroll = 12'd0;
-reg [1:0]  news_frame_phase = 2'd0;
+reg [3:0]  news_frame_phase = 4'd0;
 reg [11:0] news_line = 12'd0;
 reg        news_line_bank = 1'b0;
 reg [9:0]  news_outgoing_rows = 10'd0;
-wire       news_step = (news_frame_phase != 2'd0);
+// A zero mailbox value means no rate has crossed yet. Scroll at the
+// default rate even before the first clock-domain transfer arrives.
+wire [5:0] news_display_rate = news_rate_mem == 0 ? 6'd15 : news_rate_mem;
+wire [5:0] news_phase_sum = {2'b00,news_frame_phase} + news_display_rate;
+wire [1:0] news_step = news_phase_sum[5:4];
 wire [9:0] news_view_height = fill_compact ? 10'd480 : 10'd379;
 reg [16:0] art_line_off = 17'd0;
 wire art_line = glass && art_frame[1];
@@ -479,9 +507,31 @@ wire [17:0] line_off = fill_xbr ? (line_number << 8) :
     (line_number << 7) + (line_number << 4) +
     (fill_compact ? (line_number << 6) : ((line_number << 5) + (line_number << 2))) +
     (fill_trinitron ? (line_number << 5) : 18'd0);
-// Six gallery frames at physical 0x31B00000, each with a 2 MiB stride.
-wire [28:0] xbr_frame_base = 29'h06360000 + {8'd0,view_xbr_slot,18'd0};
-wire [28:0] cabinet_frame_base = fill_xbr ? xbr_frame_base :
+// All slots use a 2 MiB stride. The four extra frames start at
+// physical 0x35800000, after all three pairs of layout-specific news pages.
+function automatic [28:0] xbr_frame_address(input [4:0] slot);
+    case (slot)
+        5'd6:  xbr_frame_address = 29'h06B00000;
+        5'd7:  xbr_frame_address = 29'h06B40000;
+        5'd8:  xbr_frame_address = 29'h06B80000;
+        5'd9:  xbr_frame_address = 29'h06BC0000;
+        5'd10: xbr_frame_address = 29'h06D00000;
+        5'd11: xbr_frame_address = 29'h06D40000;
+        5'd12: xbr_frame_address = 29'h06D80000;
+        5'd13: xbr_frame_address = 29'h06DC0000;
+        5'd14: xbr_frame_address = 29'h06E00000;
+        5'd15: xbr_frame_address = 29'h06E40000;
+        5'd16: xbr_frame_address = 29'h06E80000;
+        5'd17: xbr_frame_address = 29'h06EC0000;
+        5'd18: xbr_frame_address = 29'h06F00000;
+        5'd19: xbr_frame_address = 29'h06F40000;
+        5'd20: xbr_frame_address = 29'h06F80000;
+        5'd21: xbr_frame_address = 29'h06FC0000;
+        5'd22: xbr_frame_address = 29'h07000000;
+        default: xbr_frame_address = 29'h06360000 + {8'd0,slot[2:0],18'd0};
+    endcase
+endfunction
+wire [28:0] cabinet_frame_base = fill_xbr ? view_xbr_frame_base :
     fill_trinitron ? 29'h062E0000 : // physical 0x31700000
     fill_compact ? (29'h06200000 + {9'd0,view_slot,17'd0}) :
     (CABINET_BASE + {10'd0,cabinet_slot_words(view_slot)});
@@ -545,7 +595,7 @@ always @(posedge clk_mem) begin
     if (rst_mem) begin
         art_frame <= 3'b000;
         news_scroll <= 12'd0;
-        news_frame_phase <= 2'd0;
+        news_frame_phase <= 4'd0;
         news_line <= 12'd0;
         news_line_bank <= 1'b0;
         news_outgoing_rows <= 10'd0;
@@ -558,7 +608,7 @@ always @(posedge clk_mem) begin
         loaded <= 1'b0;
         storing <= 1'b0;
         view_slot <= 3'd0;
-        view_xbr_slot <= 3'd0;
+        view_xbr_frame_base <= 29'h06360000;
         state <= ST_IDLE;
         zero_idx <= 8'd0;
         span_idx <= 3'd0;
@@ -656,7 +706,7 @@ always @(posedge clk_mem) begin
                 // Pausing here keeps the last bezels on screen.
                 if (fill_layout != layout_mem) begin
                     fill_layout <= layout_mem;
-                    view_xbr_slot <= xbr_slot_mem;
+                    view_xbr_frame_base <= xbr_frame_address(xbr_slot_mem);
                     bank_valid <= 2'b00;
                     pending <= 1'b0;
                     prefill_count <= 2'd0;
@@ -681,7 +731,7 @@ always @(posedge clk_mem) begin
                     fill_line <= pending_target;
                     // Latch before fetching line zero so an arrow cannot split a frame.
                     if (fill_xbr && pending_target == 10'd0)
-                        view_xbr_slot <= xbr_slot_mem;
+                        view_xbr_frame_base <= xbr_frame_address(xbr_slot_mem);
                     art_line_off <= art_row_words;
                     news_line <= news_use_incoming_row ?
                         {2'b00,incoming_news_row[9:0]} : news_scroll + {2'b00,art_row[9:0]};
@@ -690,19 +740,22 @@ always @(posedge clk_mem) begin
                         art_frame <= art_m2;
                         if (art_m2[2:1] != 2'b11 || art_frame[2:1] != 2'b11) begin
                             news_scroll <= 12'd0;
-                            news_frame_phase <= 2'd0;
+                            news_frame_phase <= 4'd0;
                             news_outgoing_rows <= 10'd0;
                         end else begin
-                            news_frame_phase <= news_frame_phase + 2'd1;
-                            if (art_m2[0] != art_frame[0])
-                                news_outgoing_rows <= news_view_height - {9'd0,news_step};
-                            else if (news_outgoing_rows != 10'd0 && news_step)
-                                news_outgoing_rows <= news_outgoing_rows - 10'd1;
-
-                            // Advance on three of every four input frames.
-                            if (news_step)
-                                news_scroll <= (news_outgoing_rows == 10'd1) ?
-                                    12'd0 : news_scroll + 12'd1;
+                            news_frame_phase <= news_phase_sum[3:0];
+                            if (art_m2[0] != art_frame[0]) begin
+                                news_outgoing_rows <= news_view_height - {8'd0,news_step};
+                                news_scroll <= news_scroll + {10'd0,news_step};
+                            end else if (news_outgoing_rows != 10'd0 && news_outgoing_rows <= {8'd0,news_step}) begin
+                                // Any extra step goes into the new strip when the join leaves the tube.
+                                news_outgoing_rows <= 10'd0;
+                                news_scroll <= {10'd0,news_step} - {2'd0,news_outgoing_rows};
+                            end else if (news_step != 0) begin
+                                if (news_outgoing_rows != 10'd0)
+                                    news_outgoing_rows <= news_outgoing_rows - {8'd0,news_step};
+                                news_scroll <= news_scroll + {10'd0,news_step};
+                            end
                         end
                     end else if (pending_target <= art_top && !art_m2[2] && !art_frame[2]) begin
                         art_frame <= art_m2;

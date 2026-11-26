@@ -50,7 +50,8 @@ flush_tty() {
 
 read_folders() {
     mkdir -p "$ROOT/CH - 50 Screenshots" || return 1
-    find "$ROOT" -mindepth 1 -maxdepth 1 -type d ! -name cache ! -name live -printf '%f\n' | sort -f > /tmp/retrotv-folders
+    find "$ROOT" -mindepth 1 -maxdepth 1 -type d ! -name cache ! -name live ! -name '.*' \
+        ! -name 'CH 51 - Test Cards' -printf '%f\n' | sort -f > /tmp/retrotv-folders
 }
 
 read_chans() {
@@ -164,8 +165,8 @@ preload_cabinets() {
     xbr="$compact/trinitron-xbr-1989.raw"
     if [ -s "$xbr" ]; then
         if [ -s "$compact/jvc-d-series.raw" ] &&
-           python3 "$MUSIC" load-xbr-gallery "$compact" --tty "$TTY" >> "$LOG" 2>&1; then
-            ready_codes=d2
+           gallery_codes=$(python3 "$MUSIC" load-xbr-gallery "$compact" --tty "$TTY" 2>> "$LOG"); then
+            ready_codes=${gallery_codes:-d2}
         elif python3 "$MUSIC" load-xbr "$xbr" --tty "$TTY" >> "$LOG" 2>&1; then
             ready_codes=d1
         else

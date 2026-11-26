@@ -11,7 +11,7 @@ from urllib.request import Request, urlopen
 CARD_ROOT = Path("/media/fat")
 CHANNELS = CARD_ROOT / "games/RetroTV/channels"
 CERTIFICATE = CARD_ROOT / "linux/retrotv-news-ca.pem"
-CHANNEL_NAME = "CH 51 - Test Cards"
+CHANNEL_NAME = "CH 0 - Test Cards"
 USER_AGENT = "RetroTV-TestCards/1.0 (https://github.com/datagod/RetroTV)"
 MAX_IMAGE_BYTES = 4 * 1024 * 1024
 CARDS = (
@@ -92,7 +92,7 @@ def install(channels, credits):
             if not target.exists():
                 staged.replace(target)
 
-    print(f"CH 51 is ready at {channel}. Run Analyze RetroTV Channels on your MiSTer.")
+    print(f"CH 0 is ready at {channel}. Run Analyze RetroTV Channels on your MiSTer.")
 
 
 if __name__ == "__main__":
@@ -106,4 +106,4 @@ if __name__ == "__main__":
     try:
         install(args.channels, credits_path.read_bytes())
     except (OSError, ValueError) as error:
-        parser.exit(1, f"CH 51 setup failed: {error}\n")
+        parser.exit(1, f"CH 0 setup failed: {error}\n")

@@ -1,25 +1,41 @@
 #include "user_io.h"
 #include "scaler.h"
+#include "input.h"
+#include "osd.h"
+#include "shmem.h"
+#include "video.h"
 
+#include <algorithm>
 #include <cerrno>
+#include <bitset>
 #include <cstdio>
 #include <cstdint>
 #include <ctime>
 #include <cstdlib>
 #include <cstring>
+#include <fstream>
 #include <limits.h>
 #include <linux/input-event-codes.h>
+#include <string>
 #include <strings.h>
 #include <sys/socket.h>
 #include <sys/stat.h>
 #include <sys/un.h>
 #include <unistd.h>
+#include <vector>
+
+bool retrotv_video_1080p();
 
 namespace {
 constexpr char socket_path[] = "/tmp/retrotv-video.sock";
 constexpr char gallery_socket[] = "/tmp/retrotv-screenshots.sock";
+constexpr char slideshow_socket[] = "/tmp/retrotv-slideshow.sock";
+constexpr char scene_socket[] = "/tmp/retrotv-scenes.sock";
+constexpr char input_socket[] = "/tmp/retrotv-input.sock";
+constexpr char catalogue_file[] = "/tmp/retrotv-chans";
 constexpr char gallery_folder[] = "/media/fat/games/RetroTV/channels/CH - 50 Screenshots";
 constexpr char channel_root[] = "/media/fat/games/RetroTV/channels/";
+constexpr char last_channel_file[] = "/media/fat/games/RetroTV/channels/last";
 
 const char* core_filename()
 {
@@ -28,16 +44,170 @@ const char* core_filename()
     return slash ? slash + 1 : path;
 }
 
-bool gallery_key(char command)
+bool send_control(const char* command, size_t length, const char* path)
 {
     static const int fd = socket(AF_UNIX, SOCK_DGRAM | SOCK_NONBLOCK | SOCK_CLOEXEC, 0);
     if (fd < 0) return false;
     sockaddr_un addr = {};
     addr.sun_family = AF_UNIX;
-    std::memcpy(addr.sun_path, gallery_socket, sizeof(gallery_socket));
-    return sendto(fd, &command, 1, MSG_DONTWAIT,
-                  reinterpret_cast<const sockaddr*>(&addr), sizeof(addr)) == 1;
+    std::strcpy(addr.sun_path, path);
+    return sendto(fd, command, length, MSG_DONTWAIT,
+                  reinterpret_cast<const sockaddr*>(&addr), sizeof(addr)) == static_cast<ssize_t>(length);
 }
+
+bool send_media_key(char command, const char* path = gallery_socket)
+{
+    return send_control(&command, 1, path);
+}
+
+bool send_input(const std::string& command)
+{
+    return send_control(command.data(), command.size(), input_socket);
+}
+
+int channel_number(const std::string& name)
+{
+    const char* next = name.c_str();
+    if (strncasecmp(next, "CH ", 3)) return -1;
+    next += 3;
+    while (*next == ' ') ++next;
+    if (*next == '-') ++next;
+    while (*next == ' ') ++next;
+    if (*next < '0' || *next > '9') return -1;
+    char* end = nullptr;
+    const long number = std::strtol(next, &end, 10);
+    return number <= 99 && (!*end || *end == ' ' || *end == '-') ? static_cast<int>(number) : -1;
+}
+
+int number_key(uint16_t key)
+{
+    if (key == KEY_0) return 0;
+    if (key >= KEY_1 && key <= KEY_9) return key - KEY_1 + 1;
+    constexpr uint16_t keypad[] = {KEY_KP0, KEY_KP1, KEY_KP2, KEY_KP3, KEY_KP4,
+                                  KEY_KP5, KEY_KP6, KEY_KP7, KEY_KP8, KEY_KP9};
+    for (int i = 0; i < 10; ++i)
+        if (keypad[i] == key) return i;
+    return -1;
+}
+
+class ChannelGuide {
+    static constexpr size_t page_size = 14;
+
+    std::vector<std::string> channels;
+    std::bitset<KEY_MAX + 1> consumed;
+    std::string digits, message;
+    size_t selected = 0;
+    bool open = false;
+    int previous_size = 8;
+
+    void paint() const
+    {
+        const size_t page = selected / page_size;
+        const size_t pages = (channels.size() + page_size - 1) / page_size;
+        auto row = [](int line, const std::string& text, bool selected = false) {
+            OsdWrite(line, text.substr(0, 30).c_str(), selected);
+        };
+        row(0, "Type 2 digits   Page " + std::to_string(page + 1) + "/" + std::to_string(pages ? pages : 1));
+        for (size_t position = 0; position < page_size; ++position) {
+            const size_t index = page * page_size + position;
+            const int line = 1 + static_cast<int>(position);
+            if (index < channels.size()) row(line, channels[index], selected == index);
+            else row(line, "");
+        }
+        row(15, message.empty() ? "CH " + digits + std::string(2 - digits.size(), '_') +
+                                  "  Up/Down Enter Esc" : message);
+    }
+
+    void show()
+    {
+        send_media_key('c');
+        std::ifstream input(catalogue_file);
+        channels.clear();
+        for (std::string name; std::getline(input, name);)
+            if (!name.empty()) channels.push_back(name);
+        selected = 0;
+        std::ifstream last(last_channel_file);
+        std::string current;
+        if (std::getline(last, current)) {
+            const auto entry = std::find(channels.begin(), channels.end(), current);
+            if (entry != channels.end()) selected = entry - channels.begin();
+        }
+        digits.clear();
+        message.clear();
+        if (channels.empty()) message = "No channels available";
+        previous_size = OsdGetSize();
+        OsdSetSize(16);
+        OsdClear();
+        OsdSetTitle("Channel Guide");
+        paint();
+        OsdUpdate();
+        OsdEnable(DISABLE_KEYBOARD);
+        open = true;
+    }
+
+    void hide()
+    {
+        OsdDisable();
+        OsdSetSize(previous_size);
+        open = false;
+    }
+
+    void tune(size_t index)
+    {
+        if (index < channels.size() && send_input("tune " + channels[index])) hide();
+        else message = "Channel is unavailable";
+    }
+
+public:
+    bool keyboard(uint16_t key, int press)
+    {
+        if (key <= KEY_MAX && consumed.test(key) && press != 1) {
+            if (!press) consumed.reset(key);
+            return true;
+        }
+        if (!open) {
+            if (key != KEY_F1 || press != 1 || user_io_osd_is_visible()) return false;
+            show();
+        } else {
+            if (key == KEY_F12 || key == KEY_MENU) {
+                if (press == 1) hide();
+                return false;
+            }
+            if (press != 1) return true;
+            if (key == KEY_F1 || key == KEY_ESC) hide();
+            else if (key == KEY_UP && selected) --selected;
+            else if (key == KEY_DOWN && selected + 1 < channels.size()) ++selected;
+            else if (key == KEY_PAGEUP && selected >= page_size) selected -= page_size;
+            else if (key == KEY_PAGEDOWN && (selected / page_size + 1) * page_size < channels.size())
+                selected = std::min(selected + page_size, channels.size() - 1);
+            else if (key == KEY_ENTER || key == KEY_KPENTER) tune(selected);
+            else if (key == KEY_BACKSPACE) {
+                if (!digits.empty()) digits.pop_back();
+                message.clear();
+            } else {
+                const int digit = number_key(key);
+                if (digit >= 0) {
+                    message.clear();
+                    digits += static_cast<char>('0' + digit);
+                    if (digits.size() == 2) {
+                        const int number = 10 * (digits[0] - '0') + digits[1] - '0';
+                        size_t index = 0;
+                        while (index < channels.size() && channel_number(channels[index]) != number) ++index;
+                        if (index == channels.size()) message = "Channel " + digits + " unavailable";
+                        else tune(index);
+                        digits.clear();
+                    }
+                }
+            }
+            if (open) paint();
+        }
+        if (key <= KEY_MAX) consumed.set(key);
+        return true;
+    }
+
+};
+
+ChannelGuide channel_guide;
 
 void capture_screenshot()
 {
@@ -98,26 +268,97 @@ bool retrotv_keyboard(uint16_t key, int press)
     static const bool enabled = !strcasecmp(core_filename(), "RetroTV.mgl") ||
                                 !strcasecmp(core_filename(), "RetroTV.rbf");
     if (!enabled) return false;
+    if (channel_guide.keyboard(key, press)) return true;
     if (key == KEY_SYSRQ || key == KEY_PRINT) {
         if (press == 1) {
-            gallery_key('c');
+            send_media_key('c');
             capture_screenshot();
         }
         return true;
     }
+    if (key == KEY_UP || key == KEY_DOWN) {
+        static unsigned shifted_arrows = 0;
+        const unsigned flag = key == KEY_UP ? 1 : 2;
+        if (shifted_arrows & flag) {
+            if (!press) shifted_arrows &= ~flag;
+            return true;
+        }
+        if (press == 1 && !user_io_osd_is_visible()) {
+            if ((get_key_mod() & (LSHIFT | RSHIFT)) &&
+                send_media_key(key == KEY_UP ? '+' : '-', scene_socket)) {
+                shifted_arrows |= flag;
+                send_media_key('c');
+                return true;
+            }
+            send_media_key(key == KEY_UP ? 'u' : 'd', scene_socket);
+        }
+    }
     if (press != 1) return false;
     if (user_io_osd_is_visible()) {
-        gallery_key('c');
+        send_media_key('c');
         return false;
     }
 
+    if (key == KEY_F4) send_media_key('0', scene_socket);
+
     switch (key) {
-        case KEY_PAGEUP: return gallery_key('n');
-        case KEY_PAGEDOWN: return gallery_key('p');
-        case KEY_D: return gallery_key('d');
-        default: gallery_key('c'); return false;
+        case KEY_N:
+            send_media_key('c');
+            return send_input("next");
+        case KEY_PAGEUP: return send_media_key('n') || send_media_key('n', slideshow_socket);
+        case KEY_PAGEDOWN: return send_media_key('p') || send_media_key('p', slideshow_socket);
+        case KEY_D: return send_media_key('d');
+        default: send_media_key('c'); return false;
     }
 }
+
+bool retrotv_scene_screenshot(unsigned char* output, int width, int height, int scaled_width, int scaled_height)
+{
+    if (width != 1024 || height != 720 || scaled_width != 1024 || scaled_height != 720)
+        return false;
+    if (strcasecmp(core_filename(), "RetroTV.mgl") && strcasecmp(core_filename(), "RetroTV.rbf"))
+        return false;
+    if (!retrotv_video_1080p() || video_is_direct() || video_fb_state())
+        return false;
+
+    const int state = open("/tmp/retrotv-scene-bank", O_RDONLY | O_CLOEXEC);
+    if (state < 0) return false;
+    char bank = 0;
+    const auto count = read(state, &bank, 1);
+    close(state);
+    if (count != 1 || (bank != '0' && bank != '1')) return false;
+
+    constexpr int screen_width = 1920, screen_height = 1080;
+    constexpr int video_width = 720, video_height = 480;
+    constexpr int frame_bytes = screen_width * screen_height * 2;
+    const uint32_t address = 0x36000000 + (bank - '0') * 0x400000;
+    auto scene = static_cast<const uint16_t*>(shmem_map(address, frame_bytes));
+    if (!scene) return false;
+
+    std::vector<unsigned char> picture(video_width * video_height * 4);
+    for (int row = 0; row < video_height; ++row) {
+        auto source = output + 4 * ((110 + row) * width + 152);
+        auto target = picture.data() + 4 * row * video_width;
+        std::memcpy(target, source, 4 * video_width);
+    }
+
+    for (int index = 0; index < screen_width * screen_height; ++index) {
+        uint16_t pixel = scene[index];
+        output[4 * index]     = (pixel & 31) << 3;
+        output[4 * index + 1] = ((pixel >> 5) & 31) << 3;
+        output[4 * index + 2] = ((pixel >> 10) & 31) << 3;
+        output[4 * index + 3] = 255;
+    }
+    shmem_unmap(const_cast<uint16_t*>(scene), frame_bytes);
+
+    for (int row = 0; row < video_height; ++row) {
+        auto source = picture.data() + 4 * row * video_width;
+        auto target = output + 4 * ((290 + row) * screen_width + 600);
+        std::memcpy(target, source, 4 * video_width);
+    }
+    return true;
+}
+
 
 void retrotv_mount_poll()
 {

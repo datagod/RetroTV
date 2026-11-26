@@ -142,6 +142,9 @@ media_aspect_toggle aspect_key(.clk(clk_sys),.reset(RESET),.osd_open(media_osd_s
 //   0xD0              hold video while Main mounts a standalone MPG
 //   0xD1              default XBR bezel is ready
 //   0xD2              all six XBR-layout cabinets are ready
+//   0xD3/0xD9         the ten/fifteen-cabinet XBR gallery is ready
+//   0xDA              the twenty-cabinet XBR gallery is ready
+//   0xDB              the twenty-three-cabinet XBR gallery is ready
 // After the mount event delivers its real size, CA with index zero opens
 // the MPG and applies the channel clock offset. Direct EOF/N/P use A9/AA.
 // Core to Linux while in music mode: A9/AA next/previous, AB pause.
@@ -165,6 +168,9 @@ reg channel_browsing = 1'b0;
 // The XBR raster inherits the native and compact geometry flags.
 reg xbr_asset_ready = 1'b0;
 reg xbr_gallery_ready = 1'b0;
+reg [4:0] xbr_last_slot = 5'd0;
+reg [1:0] scene_bank = 2'b00;
+assign RETROTV_SCENE = xbr_asset_ready ? scene_bank : 2'b00;
 wire xbr_requested_sys = xbr_asset_ready;
 wire compact_video, trinitron_video, xbr_video;
 wire [2:0] video_layout;
@@ -305,6 +311,8 @@ always @(posedge clk_sys) begin
   channel_browsing <= 1'b0;
   xbr_asset_ready <= 1'b0;
   xbr_gallery_ready <= 1'b0;
+  xbr_last_slot <= 5'd0;
+  scene_bank <= 2'b00;
   channel_rescan <= 1'b0;
   chain <= 1'b0;
   direct_movie <= 1'b0;
@@ -451,10 +459,23 @@ always @(posedge clk_sys) begin
      channel_busy <= 1'b0;
      channel_browsing <= 1'b0;
      join_cover <= 1'b0;
-    end else if (rx_byte == 8'hD1 || rx_byte == 8'hD2) begin
+    end else if (rx_byte == 8'hD1 || rx_byte == 8'hD2 || rx_byte == 8'hD3 ||
+                 rx_byte == 8'hD9 || rx_byte == 8'hDA || rx_byte == 8'hDB) begin
      xbr_asset_ready <= 1'b1;
-     xbr_gallery_ready <= rx_byte == 8'hD2;
-    end else if (rx_byte == 8'hC5)
+     xbr_gallery_ready <= rx_byte != 8'hD1;
+     case (rx_byte)
+      8'hDB: xbr_last_slot <= 5'd22;
+      8'hDA: xbr_last_slot <= 5'd19;
+      8'hD9: xbr_last_slot <= 5'd14;
+      8'hD3: xbr_last_slot <= 5'd9;
+      8'hD2: xbr_last_slot <= 5'd5;
+      default: xbr_last_slot <= 5'd0;
+     endcase
+    end else if (rx_byte == 8'hD6 || rx_byte == 8'hD7)
+     scene_bank <= {1'b1, rx_byte[0]};
+    else if (rx_byte == 8'hD8)
+     scene_bank <= 2'b00;
+    else if (rx_byte == 8'hC5)
      channel_browsing <= 1'b0;
     else if (rx_byte == 8'hC8)
      chain <= 1'b1;

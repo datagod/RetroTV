@@ -18,9 +18,13 @@ import sys
 import time
 from pathlib import Path
 
+from retrotv_screenshots import SLIDESHOW_CONTROL, open_image_controls
+from retrotv_scenes import ARCADE_CABINETS, CLASSIC_ARCADE_CABINETS, GAME_CABINETS
+
 
 IMAGE_SUFFIXES = {".jpg", ".jpeg", ".png"}
 STOCK_IMAGE = Path(__file__).resolve().parent / "assets" / "music-stock.png"
+STOCK_TEST_CARD = STOCK_IMAGE.with_name("test-card-stock.png")
 
 
 def probe_ffmpeg(path):
@@ -120,15 +124,16 @@ def elapsed_since_epoch(state):
 
 
 
-def slideshow_images(folder):
+def slideshow_images(folder, fallback=STOCK_IMAGE):
     return sorted(
         (path for path in folder.iterdir()
          if path.suffix.casefold() in IMAGE_SUFFIXES and path.is_file()),
         key=lambda path: (path.name.casefold(), path.name),
-    ) or [STOCK_IMAGE]
+    ) or [fallback]
 
 
 SLIDE_SECONDS = 20.0
+ART_BANK_SETTLE = 0.035
 GLASS_WIDTH, GLASS_HEIGHT = 428, 379
 ART_BASE = 0x30E80000
 ART_STRIDE = 0x50000
@@ -143,6 +148,10 @@ TRINITRON_ART_BASE = 0x31900000
 TRINITRON_ART_SIZE = (720, 480)
 XBR_CABINET_FILE = "trinitron-xbr-1989.raw"
 XBR_CABINET_BASE = 0x31B00000
+XBR_EXTRA_CABINET_BASE = 0x35800000
+XBR_GAME_CABINET_BASE = 0x36800000
+XBR_ARCADE_CABINET_BASE = 0x37200000
+XBR_CLASSIC_ARCADE_CABINET_BASE = 0x37C00000
 XBR_CABINET_SIZE = (1024, 720)
 XBR_SLOT_BYTES = 0x200000
 XBR_GALLERY_FILES = (
@@ -153,6 +162,15 @@ XBR_GALLERY_FILES = (
     "panasonic-superflat.raw",
     "jvc-d-series.raw",
 )
+XBR_EXTRA_GALLERY_FILES = (
+    "midcentury-1950s.raw",
+    "sony-pvm-1990s.raw",
+    "sears-color-1984.raw",
+    "weyland-yutani.raw",
+)
+XBR_GAME_GALLERY_FILES = tuple(name + ".raw" for name in GAME_CABINETS)
+XBR_ARCADE_GALLERY_FILES = tuple(name + ".raw" for name in ARCADE_CABINETS)
+XBR_CLASSIC_ARCADE_GALLERY_FILES = tuple(name + ".raw" for name in CLASSIC_ARCADE_CABINETS)
 NATIVE_CABINETS = {
     "load-trinitron": (TRINITRON_CABINET_BASE, (960, 624), 0xCF),
     "load-xbr": (XBR_CABINET_BASE, XBR_CABINET_SIZE, 0xD1),
@@ -197,7 +215,26 @@ def load_xbr_gallery(folder, tty):
     frames = [native_cabinet_pixels(folder / filename, XBR_CABINET_SIZE)
               for filename in XBR_GALLERY_FILES]
     write_cabinet_frames(XBR_CABINET_BASE, XBR_SLOT_BYTES, frames)
+    codes = bytearray((0xD2,))
     notify_core(tty, 0xD2)
+    for names, base, code in (
+        (XBR_EXTRA_GALLERY_FILES, XBR_EXTRA_CABINET_BASE, 0xD3),
+        (XBR_GAME_GALLERY_FILES, XBR_GAME_CABINET_BASE, 0xD9),
+        (XBR_ARCADE_GALLERY_FILES, XBR_ARCADE_CABINET_BASE, 0xDA),
+        (XBR_CLASSIC_ARCADE_GALLERY_FILES, XBR_CLASSIC_ARCADE_CABINET_BASE, 0xDB),
+    ):
+        paths = [folder / name for name in names]
+        if not all(path.is_file() for path in paths):
+            break
+        try:
+            frames = [native_cabinet_pixels(path, XBR_CABINET_SIZE) for path in paths]
+            write_cabinet_frames(base, XBR_SLOT_BYTES, frames)
+        except (OSError, ValueError) as error:
+            print("Could not load the remaining cabinets: %s" % error, file=sys.stderr, flush=True)
+            break
+        notify_core(tty, code)
+        codes.append(code)
+    return codes.hex()
 
 
 # Lookup tables for the low and high bytes of an opaque ARGB1555 pixel.
@@ -305,21 +342,36 @@ class Artwork:
 
 
 class Slideshow:
-    def __init__(self, images, slots, tty, native_slots=()):
+    def __init__(self, images, slots, tty, native_slots=(), fallback=STOCK_IMAGE):
         self.images = images
         self.slots = slots
         self.native_slots = native_slots
+        self.fallback = fallback
         self.tty = tty
         self.artwork = Artwork()
-        self.index = 0
+        self.index = None
         self.bank = 0
         self.deadline = 0.0
+        self.last_display = 0.0
 
     def show_due(self):
-        if self.deadline is None or time.monotonic() < self.deadline:
+        if self.deadline is not None and time.monotonic() >= self.deadline:
+            self.advance(1)
+
+    def key(self, command):
+        if command in (b"n", b"p"):
+            self.advance(1 if command == b"n" else -1)
+
+    def advance(self, direction):
+        if self.index is None:
+            index = 0
+        elif len(self.images) == 1:
             return
+        else:
+            index = (self.index + direction) % len(self.images)
+
         while True:
-            path = self.images[self.index]
+            path = self.images[index]
             try:
                 pixels = self.artwork.pixels(path)
                 native_pixels = [
@@ -327,16 +379,20 @@ class Slideshow:
                     for _, size in self.native_slots
                 ]
             except (OSError, ValueError) as error:
-                if path == STOCK_IMAGE:
+                if path == self.fallback:
                     raise
                 print("Skipping artwork: %s" % error, file=sys.stderr, flush=True)
-                self.images.pop(self.index)
+                self.images.pop(index)
                 if not self.images:
-                    self.images.append(STOCK_IMAGE)
-                self.index %= len(self.images)
+                    self.images.append(self.fallback)
+                if direction < 0:
+                    index -= 1
+                index %= len(self.images)
             else:
                 break
 
+        # Give the core time to retire the outgoing bank during rapid key presses.
+        time.sleep(max(0, self.last_display + ART_BANK_SETTLE - time.monotonic()))
         start = self.bank * ART_STRIDE
         self.slots[start:start + len(pixels)] = pixels
         for (slots, _), frame in zip(self.native_slots, native_pixels):
@@ -345,8 +401,9 @@ class Slideshow:
         notify_core(self.tty, 0xCC + self.bank)
         print("Slide %s" % path.name, flush=True)
         self.bank ^= 1
-        self.index = (self.index + 1) % len(self.images)
-        self.deadline = time.monotonic() + SLIDE_SECONDS if len(self.images) > 1 else None
+        self.index = index
+        self.last_display = time.monotonic()
+        self.deadline = self.last_display + SLIDE_SECONDS if len(self.images) > 1 else None
 
 
 class MpgPlayer:
@@ -360,6 +417,7 @@ class MpgPlayer:
         self.player_output = b""
         self.control_output = b""
         self.controls = []
+        self.slideshow = None
         self.paused = False
         self.muted = False
 
@@ -369,6 +427,9 @@ class MpgPlayer:
 
     def events_for(self, timeout):
         for key, _ in self.events.select(timeout):
+            if key.data == "slideshow":
+                self.slideshow.key(key.fileobj.recv(8))
+                continue
             data = os.read(key.fd, 65536)
             if key.data == "player":
                 if not data:
@@ -467,7 +528,7 @@ def open_art_buffers(stack, folder):
     slots = stack.enter_context(mmap.mmap(memory, 2 * ART_STRIDE, offset=ART_BASE))
 
     # Let the core retire the preceding bank before reusing bank 0.
-    time.sleep(0.035)
+    time.sleep(ART_BANK_SETTLE)
     cabinet_folder = folder.parent.parent / "compact"
     native_slots = []
     for filenames, base, size in (
@@ -481,20 +542,35 @@ def open_art_buffers(stack, folder):
     return slots, native_slots
 
 
-def open_slideshow(stack, args):
+def open_slideshow(stack, args, fallback=STOCK_IMAGE, shuffle=False):
     slots, native_slots = open_art_buffers(stack, args.folder)
-    slideshow = Slideshow(slideshow_images(args.folder), slots, args.tty, native_slots)
+    images = slideshow_images(args.folder, fallback)
+    if shuffle:
+        random.shuffle(images)
+    slideshow = Slideshow(images, slots, args.tty, native_slots, fallback)
     slideshow.show_due()
     return slideshow
 
 
 def play_slideshow(args):
     with contextlib.ExitStack() as stack:
-        slideshow = open_slideshow(stack, args)
-        while slideshow.deadline is not None:
-            time.sleep(max(0, slideshow.deadline - time.monotonic()))
-            slideshow.show_due()
-        signal.pause()
+        port = stack.enter_context(open_image_controls(SLIDESHOW_CONTROL))
+        controls = stack.enter_context(selectors.DefaultSelector())
+        controls.register(port, selectors.EVENT_READ)
+        fallback = STOCK_TEST_CARD if args.command == "testcards" else STOCK_IMAGE
+        slideshow = open_slideshow(stack, args, fallback)
+        while True:
+            timeout = None if slideshow.deadline is None else max(0, slideshow.deadline - time.monotonic())
+            if controls.select(timeout):
+                slideshow.key(port.recv(8))
+            else:
+                slideshow.show_due()
+
+
+def play_test_card(args):
+    with contextlib.ExitStack() as stack:
+        open_slideshow(stack, args, STOCK_TEST_CARD, shuffle=True)
+        time.sleep(args.seconds)
 
 
 def play_screenshots(args):
@@ -532,7 +608,10 @@ def play_channel(args, tracks, elapsed_ms):
             control = os.open(args.control, os.O_RDWR | os.O_NONBLOCK)
             stack.callback(os.close, control)
             player.events.register(control, selectors.EVENT_READ, "control")
+            port = stack.enter_context(open_image_controls(SLIDESHOW_CONTROL))
             slideshow = open_slideshow(stack, args)
+            player.slideshow = slideshow
+            player.events.register(port, selectors.EVENT_READ, "slideshow")
             while True:
                 track = tracks[track_index]
                 player.queue(args.folder / track["audio"], offset_ms)
@@ -564,12 +643,19 @@ def main():
         cabinet = commands.add_parser(name, help="Load a native cabinet bezel into MiSTer DDR")
         cabinet.add_argument("path", type=Path)
         cabinet.add_argument("--tty", type=Path, default=Path("/dev/ttyS1"))
-    gallery = commands.add_parser("load-xbr-gallery", help="Load all six F4 cabinets into MiSTer DDR")
+    gallery = commands.add_parser("load-xbr-gallery", help="Load the F4 cabinet gallery into MiSTer DDR")
     gallery.add_argument("folder", type=Path)
     gallery.add_argument("--tty", type=Path, default=Path("/dev/ttyS1"))
     slides = commands.add_parser("slideshow", help="Display a folder of images without audio")
     slides.add_argument("folder", type=Path)
     slides.add_argument("--tty", type=Path, default=Path("/dev/ttyS1"))
+    cards = commands.add_parser("testcards", help="Play the Channel 0 slideshow")
+    cards.add_argument("folder", type=Path)
+    cards.add_argument("--tty", type=Path, default=Path("/dev/ttyS1"))
+    card = commands.add_parser("test-card", help="Show one random test card for a movie break")
+    card.add_argument("folder", type=Path)
+    card.add_argument("--tty", type=Path, default=Path("/dev/ttyS1"))
+    card.add_argument("--seconds", type=float, required=True)
     shots = commands.add_parser("screenshots", help="View and manage RetroTV screenshots")
     shots.add_argument("folder", type=Path)
     shots.add_argument("--tty", type=Path, default=Path("/dev/ttyS1"))
@@ -585,7 +671,7 @@ def main():
     args = parser.parse_args()
     try:
         if args.command == "load-xbr-gallery":
-            load_xbr_gallery(args.folder, args.tty)
+            print(load_xbr_gallery(args.folder, args.tty))
             return 0
         if args.command in NATIVE_CABINETS:
             load_native_cabinet(args.path, args.tty, *NATIVE_CABINETS[args.command])
@@ -593,10 +679,12 @@ def main():
         if args.command == "load-cabinets":
             load_compact_cabinets(args.folder, args.tty)
             return 0
-        if args.command in {"slideshow", "screenshots"}:
+        if args.command in {"slideshow", "screenshots", "testcards", "test-card"}:
             signal.signal(signal.SIGTERM, stop_worker)
             if args.command == "screenshots":
                 play_screenshots(args)
+            elif args.command == "test-card":
+                play_test_card(args)
             else:
                 play_slideshow(args)
             return 0

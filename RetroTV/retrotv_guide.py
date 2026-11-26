@@ -23,8 +23,13 @@ def display_title(name, normalize):
     return title if len(title) <= 84 else title[:81].rstrip() + "..."
 
 
-def clock_rows(playlist, elapsed, now, choose, normalize):
-    clip, offset = choose(playlist, elapsed)
+def clock_rows(playlist, elapsed, now, choose, normalize, break_ms=0):
+    clip, offset = choose(playlist, elapsed, break_ms)
+    if clip is None:
+        left = max(1, (break_ms - offset + 999) // 1000)
+        when = time.strftime("%I:%M:%S %p", time.localtime(now + left)).lstrip("0")
+        return ["Now  Test card break", "0:{:02d} LEFT".format(left),
+                "Next " + when + "  " + display_title(playlist[0][0].name, normalize)]
     index = next(i for i, (path, _) in enumerate(playlist) if path == clip)
     duration = playlist[index][1]
     left = max(1, (duration - offset + 999)//1000)
@@ -34,8 +39,9 @@ def clock_rows(playlist, elapsed, now, choose, normalize):
         remaining = "{}:{:02d} LEFT".format(left//60, left % 60)
     when = time.strftime("%I:%M:%S %p", time.localtime(now + left)).lstrip("0")
     next_clip = playlist[(index+1) % len(playlist)][0]
+    next_title = "Test card break" if break_ms and index == len(playlist)-1 else display_title(next_clip.name, normalize)
     return ["Now  " + display_title(clip.name, normalize),
-            remaining, "Next " + when + "  " + display_title(next_clip.name, normalize)]
+            remaining, "Next " + when + "  " + next_title]
 
 
 def indexed_clips(folder, prepared, engine):
@@ -61,7 +67,8 @@ def channel_rows(folder, elapsed, now, engine, normalize):
     choose = engine["clock_position"]
     if kind == "video":
         clips = indexed_clips(folder, prepared, engine)
-        return clock_rows(clips, elapsed, now, choose, normalize) if clips else ["No indexed video"]
+        return clock_rows(clips, elapsed, now, choose, normalize,
+                          engine["MOVIE_BREAK_MS"]) if clips else ["No indexed video"]
     if kind == "play":
         tracks = json.loads((folder/"music.json").read_text(encoding="utf-8"))
         clips = [(folder/row["audio"], row["duration_ms"]) for row in tracks
@@ -72,6 +79,8 @@ def channel_rows(folder, elapsed, now, engine, normalize):
                        and file.is_file())
         return [f"Slideshow / {pictures} images",
                 "Images change every 20 seconds while tuned" if pictures > 1 else "Still image"]
+    if kind == "testcards":
+        return ["Broadcast test cards", "Images change every 20 seconds while tuned"]
     if kind == "screenshots":
         return ["Screenshots taken with Print Screen"]
     marker = (folder/engine["NEWS_MARKER"]).read_text(encoding="utf-8").strip().casefold()

@@ -34,7 +34,7 @@ module ddr_svc
 	output  [7:0] ram_byteenable,
 	output reg    ram_write,
 
-	output  [7:0] ram_bcnt,
+	output reg [7:0] ram_bcnt,
 
 	input  [31:3] ch0_addr,
 	input   [7:0] ch0_burst,
@@ -46,7 +46,13 @@ module ddr_svc
 	input   [7:0] ch1_burst,
 	output [63:0] ch1_data,
 	input         ch1_req,
-	output        ch1_ready
+	output        ch1_ready,
+
+	input  [31:3] ch2_addr,
+	input   [7:0] ch2_burst,
+	output [63:0] ch2_data,
+	input         ch2_req,
+	output        ch2_ready
 );
 
 assign ram_burstcnt   = ram_burst;
@@ -56,52 +62,48 @@ assign ram_writedata  = 0;
 
 assign ch0_data  = ram_q[0];
 assign ch1_data  = ram_q[1];
+assign ch2_data  = ram_q[2];
 assign ch0_ready = ready[0];
 assign ch1_ready = ready[1];
+assign ch2_ready = ready[2];
 
 reg  [7:0] ram_burst;
-reg [63:0] ram_q[2];
+reg [63:0] ram_q[3];
 reg [31:3] ram_address;
-reg  [1:0] ack = 0;
-reg  [1:0] ready;
+reg  [2:0] ack = 0;
+reg  [2:0] ready = 0;
 reg        state = 0;
-reg        ch = 0;
+reg  [1:0] ch = 0;
+
+wire [2:0] pending = {ch2_req, ch1_req, ch0_req} ^ ack;
+// Audio and palette transfers are serviced before the bounded scenery bursts.
+wire [1:0] next_channel = pending[0] ? 2'd0 : pending[1] ? 2'd1 : 2'd2;
 
 always @(posedge clk) begin
 	ready <= 0;
-	
-	if(!ram_waitrequest) begin
-		ram_read  <= 0;
+	if (!ram_waitrequest) begin
+		ram_read <= 0;
 		ram_write <= 0;
-
-		case(state)
-			0: if(ch0_req != ack[0]) begin
-					ack[0]      <= ch0_req;
-					ram_address <= ch0_addr;
-					ram_burst   <= ch0_burst;
-					ram_read    <= 1;
-					ch 			<= 0;
-					ram_bcnt    <= 8'hFF;
-					state       <= 1;
-				end
-				else if(ch1_req != ack[1]) begin
-					ack[1]      <= ch1_req;
-					ram_address <= ch1_addr;
-					ram_burst   <= ch1_burst;
-					ram_read    <= 1;
-					ch 			<= 1;
-					ram_bcnt    <= 8'hFF;
-					state       <= 1;
-				end 
-			1: begin
-					if(ram_read_ready) begin
-						ram_bcnt  <= ram_bcnt + 1'd1;
-						ram_q[ch] <= ram_readdata;
-						ready[ch] <= 1;
-						if ((ram_bcnt+2'd2) == ram_burst) state <= 0;
-					end
-				end
-		endcase
+		if (!state && pending != 0) begin
+			ack[next_channel] <= ~ack[next_channel];
+			case (next_channel)
+				2'd0: {ram_address, ram_burst} <= {ch0_addr, ch0_burst};
+				2'd1: {ram_address, ram_burst} <= {ch1_addr, ch1_burst};
+				default: {ram_address, ram_burst} <= {ch2_addr, ch2_burst};
+			endcase
+			ch <= next_channel;
+			ram_bcnt <= 8'hFF;
+			ram_read <= 1;
+			state <= 1;
+		end
+	end
+	// waitrequest throttles commands, not data returned for a prior read.
+	if (state && ram_read_ready) begin
+		ram_bcnt <= ram_bcnt + 1'd1;
+		ram_q[ch] <= ram_readdata;
+		ready[ch] <= 1;
+		if ((ram_bcnt + 8'd2) == ram_burst)
+			state <= 0;
 	end
 end
 
