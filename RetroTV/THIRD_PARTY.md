@@ -17,3 +17,5 @@
   [NSS certificate store](https://github.com/nss-dev/nss/blob/master/lib/ckfw/builtins/certdata.txt).
 - Cabinet artwork is inspired by vintage televisions. Manufacturer and model
   names identify their inspirations.
+- The Fireplace channel uses footage from Berkeley Community Media. See the
+  [recording credit, license, and edits](FIREPLACE.md).
