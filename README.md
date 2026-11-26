@@ -39,11 +39,20 @@ cycle through six cabinets. F4 returns to the default cabinet.
 | 17 · Moon | Local phase, sky position, moonrise and moonset in one still snapshot per day |
 | 50 · Screenshots | Saved TV pictures with slide transitions |
 
-The download includes these channels, the cabinet artwork, and a stock image
-for music channels. Add your own media using the [channel setup instructions](INSTALL.md#add-your-own-channels).
+The RetroTV installer includes these channels, the cabinet artwork, and a
+stock image for music channels.
 
-The optional [CH 51 – Test Cards slideshow](INSTALL.md#add-the-test-card-channel)
-plays seven historical TV test patterns, one every 20 seconds.
+## Optional channels
+
+| Channel | What it shows |
+| --- | --- |
+| 51 · Test Cards | Seven vintage broadcast test cards from five regions, one every 20 seconds. [Setup](INSTALL.md#add-the-test-card-channel) · [Sources and credits](RetroTV/TEST_CARDS.md) |
+| 52 · Fireplace | A five-minute excerpt of a crackling wood fire from Berkeley Community Media. [Original footage, license, and credits](RetroTV/FIREPLACE.md) |
+
+To add Fireplace, put a RetroTV-compatible `.mpg` file in
+`CH 52 - Fireplace` under your RetroTV channels directory and run
+**Analyze RetroTV Channels**. See the [channel setup instructions](INSTALL.md#add-your-own-channels)
+for the video format and folder location.
 
 ## Building
 
