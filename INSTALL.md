@@ -33,7 +33,7 @@ Then use the new ZIP and follow the same steps.
 
 Create numbered folders in `/media/fat/games/RetroTV/channels/`. Use a
 folder name like `CH 1 - Cartoons`, with a unique channel number. The
-built-in channels use 0, 12–17, and 50.
+built-in channels use 0, 12–17, 21–22, and 50.
 
 - **Video.** Use progressive MPEG-2 Program Stream `.mpg` files with MP2
   audio. The standard picture is 720×480 at 29.97 fps. Files play directly,
@@ -82,12 +82,20 @@ Run **Scripts → Analyze RetroTV Channels** afterward, then tune to CH 0.
 At 1920×1080 HDMI, **Up** and **Down** choose the cabinet. Hold **Shift**
 with either key to cycle through the backgrounds. Choose from solid black,
 ten living rooms from the 1940s–1960s, the original mid-century living room,
-the retro media room, the spacecraft bay, and five early-1980s arcades.
+the retro media room, the spacecraft bay, five early-1980s arcades, a
+tropical veranda, and an operational command center.
 **F4** returns to the default XBR cabinet. The video opening is 720×480 pixels.
+At 1080p, press **F4**, then **Down** once for the FPGATron upright or twice
+for the Bubbatron upright.
 
 On scrolling information channels, **Page Up** makes the text faster and
 **Page Down** makes it slower. Each press adjusts the speed by 20% of the
 normal rate, within a range of 20%–240%. The Moon channel is a still image.
+
+CH 21 and CH 22 use the same scrolling controls. Each bulletin refreshes
+once every 24 hours while the MiSTer is on, regardless of the selected
+channel. The SD card keeps the last bulletin available offline. CH 22
+labels recently accepted scores and Submission Watch stories separately.
 
 ## Capture and view screenshots
 

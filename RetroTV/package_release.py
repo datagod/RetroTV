@@ -5,14 +5,15 @@ import argparse
 from pathlib import Path
 from zipfile import ZIP_DEFLATED, ZipFile
 
-from retrotv_scenes import BACKGROUNDS, CABINETS
+from retrotv_scenes import BACKGROUNDS, CABINETS, COMPACT_CABINETS
 
 HERE = Path(__file__).resolve().parent
 ROOT = HERE.parent
 WORKERS = (
     "retrotv-menu.sh", "retrotv-broadcast.py", "retrotv-music.py", "retrotv-news.py",
     "retrotv_guide.py", "retrotv_moon.py", "retrotv_space.py", "retrotv_weather.py",
-    "retrotv_screenshots.py", "retrotv_scenes.py",
+    "retrotv_screenshots.py", "retrotv_scenes.py", "retrotv_watch.py",
+    "retrotv_daily.py", "retrotv_twingalaxies.py",
     "astronomy_engine-2.1.19-py3-none-any.whl", "assets/music-stock.png", "assets/test-card-stock.png",
 )
 
@@ -35,7 +36,7 @@ def package(rbf, main, ca, archive):
         (HERE / "v2/cabinet.raw", "payload/games/RetroTV/v2/cabinet.raw"),
     ]
     files.extend((HERE / name, "payload/linux/" + name) for name in WORKERS)
-    for name in CABINETS:
+    for name in COMPACT_CABINETS:
         frame = "compact/" + name + ".raw"
         files.append((HERE / frame, "payload/games/RetroTV/" + frame))
     scenery = [name + ".cab.gz" for name in CABINETS]

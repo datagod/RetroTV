@@ -184,11 +184,25 @@ stop_listener() {
 }
 
 listener_pid=
+daily_pids=
 legacy_pid=
 seen=
 saw_gap=0
-trap stop_listener EXIT
+stop_workers() {
+    stop_listener
+    for worker in $daily_pids; do
+        kill "$worker" 2>/dev/null
+        wait "$worker" 2>/dev/null
+    done
+}
+trap stop_workers EXIT
 trap 'exit 0' HUP INT TERM
+for daily in "$ROOT/CH 21 - MiSTer Watch" "$ROOT/CH 22 - Twin Galaxies"; do
+    if [ -f "$daily/.retrotv-news" ]; then
+        python3 -u /media/fat/linux/retrotv-news.py "$daily" --daily-bulletin >> "$LOG" 2>&1 &
+        daily_pids="$daily_pids $!"
+    fi
+done
 while true; do
     pid=$(mister_pid)
     line=

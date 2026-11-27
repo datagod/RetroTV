@@ -11,11 +11,13 @@ a 20-second random test card before the first video starts again.
 
 On 1080p HDMI, RetroTV opens on a late-1980s Trinitron XBR-inspired set.
 The tube opening displays a 720×480 picture pixel-for-pixel. Up and Down
-cycle through twenty-three cabinets, including original arcade designs for
-Defender, Robotron, and Pac-Man and TV sets inspired by Nintendo, Sega, Atari,
-Sony PlayStation, and NEC TurboGrafx. Hold Shift with Up or Down to cycle through nineteen backgrounds,
-including solid black, ten period living rooms, and five arcades. F4 returns to
-the default cabinet. The loading screen shows the keyboard controls.
+cycle through 25 cabinet views, including full-height FPGATron and Bubbatron
+uprights, a separate flat Robotron bezel, original Defender and Pac-Man designs,
+and TV sets inspired by Nintendo, Sega, Atari,
+Sony PlayStation, and NEC TurboGrafx. Hold Shift with Up or Down to cycle
+through twenty-one backgrounds, including solid black, ten period living rooms,
+five arcades, a tropical veranda, and an operational command center. F4 returns
+to the default cabinet. The loading screen shows the keyboard controls.
 
 ![RetroTV Moon channel on the Sony Trinitron XBR cabinet](docs/images/retrotv-moon-xbr.png)
 
@@ -46,6 +48,8 @@ the default cabinet. The loading screen shows the keyboard controls.
 | 15 · What's On Now | The schedule for your own channels |
 | 16 · Space Desk | Launches, ISS passes, and space headlines |
 | 17 · Moon | Local phase, sky position, moonrise and moonset in one still snapshot per day |
+| 21 · MiSTer Watch | Daily scrolling bulletin with new cores, arcade builds, developer notes, and utility releases |
+| 22 · Twin Galaxies | Daily gaming headlines, Submission Watch, and recently accepted scores |
 | 50 · Screenshots | Saved TV pictures with slide transitions |
 
 The RetroTV installer includes these channels, the cabinet and background

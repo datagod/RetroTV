@@ -7,6 +7,7 @@ from datetime import datetime
 from decimal import Decimal
 from functools import lru_cache
 import html
+from importlib import import_module
 from itertools import zip_longest
 import json
 import mmap
@@ -46,6 +47,12 @@ PANEL_HEADER = {
     "weather": ("CH 14  /  WEATHER", "LOCAL WEATHER"),
     "guide": ("CH 15 / WHAT'S ON NOW", "RETROTV PROGRAM GUIDE"),
     "space": ("CH 16  /  SPACE DESK", "LAUNCHES / ISS / NEWS"),
+    "watch": ("CH 21 / MISTER WATCH", "DAILY RELEASE WIRE"),
+    "twin-galaxies": ("CH 22 / TWIN GALAXIES", "DAILY SCORE WIRE"),
+}
+DAILY_BULLETINS = {
+    "watch": ("MiSTer Watch", "retrotv_watch"),
+    "twin-galaxies": ("Twin Galaxies", "retrotv_twingalaxies"),
 }
 RETRY_SECONDS = 60
 CACHE_NAME = ".latest-bulletin.json"
@@ -109,9 +116,12 @@ class HTTPSRedirect(urllib.request.HTTPRedirectHandler):
         return super().redirect_request(req, fp, code, msg, headers, newurl)
 
 
-def read_url(url, context, *, binary=False):
+def read_url(url, context, *, binary=False, accept=None):
     opener = urllib.request.build_opener(HTTPSRedirect(), urllib.request.HTTPSHandler(context=context))
-    request = urllib.request.Request(url, headers={"User-Agent": "RetroTV/1.0 (personal news reader)"})
+    headers = {"User-Agent": "RetroTV/1.0 (personal news reader)"}
+    if accept:
+        headers["Accept"] = accept
+    request = urllib.request.Request(url, headers=headers)
     with opener.open(request, timeout=8) as response:
         data = response.read(MAX_BYTES + 1)
     if len(data) > MAX_BYTES or (not binary and b"\0" in data):
@@ -400,7 +410,12 @@ class BulletinRenderer:
         gap = 40
         if panel in PANEL_HEADER:
             if offline or not bulletin:
-                if panel == "weather":
+                if panel in DAILY_BULLETINS:
+                    if offline:
+                        notice = "SHOWING SAVED BULLETIN" if bulletin.get("sections") else "RELEASE FEEDS UNAVAILABLE"
+                    else:
+                        notice = "WAITING FOR DAILY BULLETIN"
+                elif panel == "weather":
                     notice = "LAST WEATHER REPORT" if bulletin else (
                         "WEATHER UNAVAILABLE" if offline else "LOCATING LOCAL WEATHER")
                 else:
@@ -418,6 +433,12 @@ class BulletinRenderer:
                     elif panel == "space":
                         color = "amber" if row.startswith(("T-", "Est. T-")) else "white"
                         part.append((row, color, scale if row_index == 0 else label_scale))
+                    elif panel == "watch":
+                        roundup = heading in ("New arcade releases", "Arcade updates")
+                        color = "amber" if row_index == 0 and not roundup else "white"
+                        part.append((row, color, 2 if roundup else label_scale))
+                    elif panel == "twin-galaxies":
+                        part.append((row, "amber" if index == 0 else "white", label_scale))
                     elif index == 0 and row_index < 2:
                         part.append((row, "amber" if row_index == 1 else "cyan", label_scale))
                     else:
@@ -497,6 +518,8 @@ def publish(memory, tty, renderer, bulletin, bank, stock=False, offline=False, w
         port.write(bytes([0xD4 + bank]))
     panel = "weather" if weather else panel
     kind = {"guide": "Program guide", "weather": "Weather", "space": "Space Desk"}.get(panel, "News")
+    if panel in DAILY_BULLETINS:
+        kind = DAILY_BULLETINS[panel][0]
     units = "sections" if panel else "headlines"
     print("{} bulletin published: {} visible {}, bank {}".format(kind, shown, units, bank), flush=True)
     return 1 - bank
@@ -556,18 +579,48 @@ def channel_bulletin(folder):
     return mode, load_bulletin(cache, stock), lambda previous: fetch(stock, previous)
 
 
+def refresh_daily(folder, mode, once=False):
+    import retrotv_daily
+
+    label, module = DAILY_BULLETINS[mode]
+    fetch = import_module(module).fetch
+    cache = folder / CACHE_NAME
+    accept = None
+    if mode == "twin-galaxies":
+        context = None  # Use the system trust store for the public Twin Galaxies routes.
+        accept = "text/html,application/xml;q=0.9,*/*;q=0.8"
+    else:
+        context = ssl.create_default_context(cafile=str(CA_PATH))
+
+    def update(previous):
+        return fetch(lambda url: read_url(url, context, accept=accept), normalize_title, previous)
+
+    while True:
+        delay = retrotv_daily.refresh_if_due(cache, update, save_bulletin, label)
+        if once:
+            return
+        time.sleep(delay)
+
+
 def play(folder, tty):
-    if channel_mode(folder) == "moon":
+    mode = channel_mode(folder)
+    if mode == "moon":
         import retrotv_moon
 
         renderer = BulletinRenderer(read_font(FONT_PATH))
         context = ssl.create_default_context(cafile=str(CA_PATH))
         retrotv_moon.play(folder, tty, ASSET_DIR, renderer, packed_color, read_url, context, normalize_title)
         return
-    mode, bulletin, update = channel_bulletin(folder)
+    cache = folder / CACHE_NAME
+    daily = mode in DAILY_BULLETINS
+    if daily:
+        import retrotv_daily
+
+        bulletin = retrotv_daily.bulletin(cache)
+    else:
+        mode, bulletin, update = channel_bulletin(folder)
     stock = mode == STOCK_MARKER
     panel = mode if mode in PANEL_HEADER else ""
-    cache = folder / CACHE_NAME
     if stock:
         print("Stock news channel active.", flush=True)
     renderer = BulletinRenderer(read_font(FONT_PATH))
@@ -577,7 +630,17 @@ def play(folder, tty):
         memory = stack.enter_context(mmap.mmap(fd, PAGE_BYTES * 6, offset=DDR_BASE))
         # The tune command clears the previous art before bank zero is reused.
         time.sleep(.05)
-        bank = publish(memory, tty, renderer, bulletin, 0, stock, panel=panel)
+        offline = daily and bool((bulletin or {}).get("offline"))
+        bank = publish(memory, tty, renderer, bulletin, 0, stock, offline=offline, panel=panel)
+        if daily:
+            # The boot worker owns network refreshes. The display only reads its cache.
+            while True:
+                time.sleep(10)
+                current = retrotv_daily.bulletin(cache)
+                if current != bulletin:
+                    bulletin = current
+                    bank = publish(memory, tty, renderer, bulletin, bank, panel=panel,
+                                   offline=bool((bulletin or {}).get("offline")))
         interval = refresh_seconds(folder, stock, panel)
         delay = 0
         if bulletin and not bulletin["legacy"]:
@@ -613,11 +676,20 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("folder",type=Path)
     parser.add_argument("--tty",type=Path,default=Path("/dev/ttyS1"))
-    parser.add_argument("--refresh-cache",action="store_true",help="fetch and save headlines without using the display")
+    command = parser.add_mutually_exclusive_group()
+    command.add_argument("--refresh-cache", action="store_true",
+                         help="refresh the cache without using the display")
+    command.add_argument("--daily-bulletin", "--daily-watch", action="store_true",
+                         help="run the channel's daily cache updater")
     args = parser.parse_args()
     signal.signal(signal.SIGTERM,stop_worker)
     try:
-        if args.refresh_cache:
+        mode = channel_mode(args.folder)
+        if args.daily_bulletin or (args.refresh_cache and mode in DAILY_BULLETINS):
+            if mode not in DAILY_BULLETINS:
+                raise ValueError("expected a daily bulletin channel folder")
+            refresh_daily(args.folder, mode, once=args.refresh_cache)
+        elif args.refresh_cache:
             mode, previous, update = channel_bulletin(args.folder)
             bulletin = update(previous)
             if mode != "guide":

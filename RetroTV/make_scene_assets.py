@@ -8,13 +8,16 @@ import re
 from PIL import Image, ImageChops
 
 from make_xbr_cabinets import NATIVE_GALLERY, XBR_RECT, fit_xbr, pack_argb1555
-from retrotv_scenes import BACKGROUNDS, CABINETS, HEIGHT, SPAN, TRANSPARENT_CABINETS, VIDEO, WIDTH
+from retrotv_scenes import (
+    BACKGROUNDS, CABINETS, FULL_HD_CABINETS, HEIGHT, SPAN, TRANSPARENT_CABINETS, VIDEO, WIDTH,
+)
 
 ROOT = Path(__file__).resolve().parent
+ALPHA_CABINETS = TRANSPARENT_CABINETS + FULL_HD_CABINETS
 
 
 def cabinet_artwork(source, name):
-    if name in NATIVE_GALLERY or name in TRANSPARENT_CABINETS:
+    if name in NATIVE_GALLERY or name in ALPHA_CABINETS:
         with Image.open(source) as image:
             return image.convert("RGBA")
     artwork = Image.new("RGBA", (WIDTH, HEIGHT))
@@ -67,7 +70,7 @@ def pack(folder):
     for name in CABINETS:
         source = ROOT / "cabinets" / (name + "-1080p.png")
         data = b"".join(cabinet_spans(cabinet_artwork(source, name),
-                                     transparent_exterior=name in TRANSPARENT_CABINETS))
+                                     transparent_exterior=name in ALPHA_CABINETS))
         (folder / (name + ".cab.gz")).write_bytes(gzip.compress(data, compresslevel=6, mtime=0))
     for name in BACKGROUNDS[1:]:
         with Image.open(ROOT / "backgrounds" / (name + ".jpg")) as source:

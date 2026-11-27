@@ -12,6 +12,8 @@ CARD_BY_MODE = {
     "guide": "This program guide",
     "space": "Rocket launches, ISS passes and mission updates",
     "moon": "Lunar phase, sky position, moonrise and moonset",
+    "watch": "Daily MiSTer core, arcade and developer release notes",
+    "twin-galaxies": "Daily gaming news and recently accepted scores",
 }
 
 

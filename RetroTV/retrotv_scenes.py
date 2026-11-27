@@ -27,11 +27,13 @@ ARCADE_CABINETS = ("arcade-star-patrol", "arcade-lunar-run", "arcade-pixel-drift
                    "arcade-night-circuit", "arcade-robot-relay")
 CLASSIC_ARCADE_CABINETS = ("arcade-defender", "arcade-robotron", "arcade-pac-man")
 TRANSPARENT_CABINETS = GAME_CABINETS + ARCADE_CABINETS + CLASSIC_ARCADE_CABINETS
-CABINETS = (
+COMPACT_CABINETS = (
     "trinitron-xbr-1989", "zenith-space-command", "rca-colortrak-2000",
     "sharp-linytron", "panasonic-superflat", "jvc-d-series",
     "midcentury-1950s", "sony-pvm-1990s", "sears-color-1984", "weyland-yutani",
 ) + TRANSPARENT_CABINETS
+FULL_HD_CABINETS = ("arcade-bubbatron-upright", "arcade-fpgatron-upright")
+CABINETS = COMPACT_CABINETS + FULL_HD_CABINETS
 BACKGROUNDS = (
     "black", "midcentury-living-room", "retro-media-room", "spacecraft-bay",
     "1941-radio-parlor", "1944-evening-parlor", "1948-bungalow-living-room",
@@ -40,6 +42,7 @@ BACKGROUNDS = (
     "1969-sunken-living-room",
     "arcade-1980-mall", "arcade-1981-boardwalk", "arcade-1982-neon",
     "arcade-1983-pizza-parlor", "arcade-1984-skate-rink",
+    "tropical-veranda", "operational-command-center",
 )
 
 

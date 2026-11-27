@@ -39,6 +39,16 @@ regenerate the cabinet gallery and startup frame using
 background photographs with `python3 RetroTV/make_scene_assets.py` before
 building the installer.
 
+For a cabinet that uses the full 1080p canvas, start with a 1920×1080
+RGBA PNG. Leave the exterior transparent and cut a fully transparent
+720×480 rectangle at (600, 290). The opening ends before column 1320
+and row 770. Draw the cabinet anywhere else on the canvas. Save it as
+`RetroTV/cabinets/<name>-1080p.png`, add the name to `FULL_HD_CABINETS`
+in `retrotv_scenes.py`, and run `python3 RetroTV/make_scene_assets.py`.
+The 1080p compositor uses the original pixel positions and the PNG alpha
+mask to show the background around the cabinet. The FPGATron upright
+is an example.
+
 Keep the Linux and FPGA DDR addresses in sync. These reserved ranges are
 contiguous, with each upper bound exclusive.
 
